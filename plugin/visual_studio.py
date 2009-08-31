@@ -37,7 +37,7 @@ def dte_compile_file (vs_pid, fn_quickfix):
         dte.ExecuteCommand ('Build.Compile')
     except Exception, e:
         logging.exception (e)
-        _dte_exception (e)
+        _dte_exception (e, sys.exc_traceback)
         _vim_activate ()
         return
     # ExecuteCommand is not synchronous so we have to wait
@@ -74,7 +74,7 @@ def dte_build_solution(vs_pid, fn_quickfix, write_first):
         _dte_wait_for_build (dte)
     except Exception, e:
         logging.exception (e)
-        _dte_exception (e)
+        _dte_exception (e, sys.exc_traceback)
         _vim_activate ()
         return
     dte_output (vs_pid, fn_quickfix, 'Output')
@@ -83,7 +83,6 @@ def dte_build_solution(vs_pid, fn_quickfix, write_first):
 
 #----------------------------------------------------------------------
 
-# NOTE: new function; build the 'Startup project'
 # Renamed from dte_build_startup_project to dte_build_project
 def dte_build_project(vs_pid, fn_quickfix, write_first, project_name=None):
     logging.info ('== dte_build_project %s' % vars())
@@ -99,21 +98,24 @@ def dte_build_project(vs_pid, fn_quickfix, write_first, project_name=None):
     _dte_activate (vs_pid)
     _dte_output_activate (vs_pid)
     try:
-        configuration_name = dte.Solution.SolutionBuild.ActiveConfiguration.Name
-        def get_project_unique_name(name):
-            for p in dte.Solution.Projects:
-                if p.Name == name:
-                    return p.UniqueName
-        project_unique_name = get_project_unique_name (project_name or
-                dte.Solution.Properties("StartupProject").Value)
-        logging.info ('SolutionBuild.BuildProject configuration_name: %s, project_unique_name: %s' %
-                (configuration_name, project_unique_name, ))
-        dte.Solution.SolutionBuild.BuildProject(configuration_name, project_unique_name, 1)
+        configuration_name = dte.Solution.SolutionBuild. \
+                ActiveConfiguration.Name
+        if not project_name:
+            project_name = dte.Solution.Properties("StartupProject").Value
+        project_unique_name = _get_project(dte, project_name).UniqueName
+
+        logging.info (
+'SolutionBuild.BuildProject configuration_name: %s, \
+project_unique_name: %s' % (configuration_name, project_unique_name))
+
+        dte.Solution.SolutionBuild.BuildProject(configuration_name,
+                project_unique_name, 1)
+
         # Build is not synchronous so we have to wait
         _dte_wait_for_build (dte)
     except Exception, e:
         logging.exception (e)
-        _dte_exception (e)
+        _dte_exception (e, sys.exc_traceback)
         _vim_activate ()
         return
     dte_output (vs_pid, fn_quickfix, 'Output')
@@ -131,11 +133,12 @@ def dte_set_startup_project(vs_pid, project_name, project_index):
         dte.Solution.Properties('StartupProject').Value = project_name
     except Exception, e:
         logging.exception (e)
-        _dte_exception(e)
+        _dte_exception (e, sys.exc_traceback)
         return
     # Only change the index if the name was successfully changed
-    _vim_command ('let s:visual_studio_startup_project_index = %s' % project_index)
-    _vim_command ("echo 'Startup project set to: %s'" % project_name)
+    _vim_command ('let s:visual_studio_startup_project_index = %s' %
+            project_index)
+    _vim_echo ('Startup project set to: %s' % project_name)
 
 #----------------------------------------------------------------------
 
@@ -150,7 +153,7 @@ def dte_task_list (vs_pid, fn_quickfix):
         if str(window.Caption).startswith('Task List'):
             task_list = window
     if not task_list:
-        _vim_msg ('Error: Task List window not active')
+        _vim_echomsg ('Error: Task List window not active')
         return
     TL = task_list.Object
     for i in range (1, TL.TaskItems.Count+1):
@@ -171,13 +174,13 @@ def dte_task_list (vs_pid, fn_quickfix):
 def dte_output (vs_pid, fn_output, window_caption, notify=None):
     logging.info ('== dte_output %s' % vars())
     if window_caption not in ['Find Results 1', 'Find Results 2', 'Output']:
-        _vim_msg ('Error: unrecognized window (%s)' % window_caption)
+        _vim_echomsg ('Error: unrecognized window (%s)' % window_caption)
         return
     dte = _get_dte(vs_pid)
     if not dte: return
     window = _dte_get_window(dte, window_caption)
     if not window:
-        _vim_msg ('Error: window not active (%s)' % window_caption)
+        _vim_echomsg ('Error: window not active (%s)' % window_caption)
         return
     if window_caption == 'Output':
         owp = window.Object.OutputWindowPanes.Item ('Build')
@@ -222,7 +225,7 @@ def dte_get_file (vs_pid, modified=None):
     if not dte: return
     doc = dte.ActiveDocument
     if not doc:
-        _vim_status ('No VS file!')
+        _vim_echomsg ('Error: No file active in Visual Studio!')
         return
     pt = doc.Selection.ActivePoint
     file = os.path.join (doc.Path, doc.Name)
@@ -250,7 +253,7 @@ def dte_put_file (vs_pid, filename, modified, line_num, col_num):
         _dte_set_autoload (vs_pid)
         _vim_command ('write')
     io = dte.ItemOperations
-    logging.info ('dte_put_file abspath: >%s<' % (os.path.abspath(filename), ))
+    logging.info ('dte_put_file abspath: >%s<' % (os.path.abspath(filename)))
     rc = io.OpenFile (os.path.abspath (filename))
     sel = dte.ActiveDocument.Selection
     sel.MoveToLineAndOffset (line_num, col_num)
@@ -269,12 +272,13 @@ def dte_list_projects (vs_pid):
     logging.info ('== dte_list_projects %s' % vars())
     dte = _get_dte(vs_pid)
     if not dte: return
-    startup_project_name = str(dte.Solution.Properties("StartupProject").Value)
+    startup_project_name = dte.Solution.Properties("StartupProject").Value
     # collect all the names in a list so they can be processed in sorted order
     startup_project_index = -1
     index = 0
     lst_result = []
-    lst_project = [project for project in dte.Solution.Projects]
+    # FIXME: not used
+    # lst_project = [project for project in dte.Solution.Projects]
     for project in sorted(dte.Solution.Projects, cmp=lambda x,y: cmp(x.Name, y.Name)):
         if project.Name == startup_project_name:
             startup_project_index = index
@@ -292,7 +296,7 @@ def _dte_project_tree (project):
         return []
     name = str(name)
     properties = _com_property(project, 'Properties')
-    if properties: 
+    if properties:
         try: full_path = str(properties['FullPath'])
         except: full_path = None
         if full_path and os.path.isfile(full_path):
@@ -311,6 +315,45 @@ def _com_property (object, attr, default=None):
         return getattr (object, attr, default)
     except:
         return default
+
+#----------------------------------------------------------------------
+
+def dte_get_files(vs_pid, project_name=None):
+    logging.info ('== dte_get_files %s' % vars())
+    lst_files = [str(s) for s in _dte_get_proj_files(vs_pid, project_name)]
+    _vim_command ('let s:visual_studio_lst_project_files = %s' % lst_files)
+
+def _dte_get_proj_files(vs_pid, project_name=None):
+    dte = _get_dte(vs_pid)
+    files = []
+    try:
+        # Use the startup project as the default project
+        if not project_name:
+            project_name = dte.Solution.Properties("StartupProject").Value
+        project = _get_project(dte, project_name)
+        # Get the project files recursively
+        files = _dte_get_proj_items_files(project.ProjectItems)
+    except Exception, e:
+        logging.exception (e)
+        _dte_exception (e, sys.exc_traceback)
+    return files
+
+# Recursive function to get the files of a list of project items
+def _dte_get_proj_items_files(proj_items):
+    files = []
+    for p in proj_items:
+        if p.Properties.Item("Kind").Value == "VCFile":
+            files.append(p.Properties.Item("FullPath").Value)
+        else:
+            files += _dte_get_proj_items_files(p.ProjectItems)
+    return files
+
+#----------------------------------------------------------------------
+
+def _get_project(dte, name):
+    for p in dte.Solution.Projects:
+        if p.Name == name:
+            return p
 
 #----------------------------------------------------------------------
 
@@ -345,7 +388,7 @@ def _get_dte (vs_pid):
             return dte
     except pywintypes.com_error:
         pass
-    _vim_msg ('Cannot access VisualStudio. Not running?')
+    _vim_echomsg ('Error: Cannot access VisualStudio. Not running?')
     return None
 
 #----------------------------------------------------------------------
@@ -396,7 +439,7 @@ def _dte_has_csharp_projects (dte):
     try:
         if dte.CSharpProjects.Count:
             return 1
-    except pywintypes.com_error:
+    except (pywintypes.com_error, AttributeError):
         pass
     return 0
 
@@ -409,7 +452,7 @@ def _get_wsh ():
         try:
             _wsh = win32com.client.Dispatch ('WScript.Shell')
         except pywintypes.com_error:
-            _vim_msg ('Cannot access WScript.Shell')
+            _vim_echomsg ('Error: Cannot access WScript.Shell')
     return _wsh
 
 #----------------------------------------------------------------------
@@ -448,20 +491,25 @@ def _dte_output_activate (vs_pid):
 #----------------------------------------------------------------------
 
 def _dte_get_window(dte, caption):
-    try: return dte.Windows[caption]
-    except pywintypes.com_error: return None
+    try:
+        return dte.Windows.Item(caption)
+    except pywintypes.com_error:
+        return None
 
 #----------------------------------------------------------------------
 
 def _dte_set_autoload (vs_pid):
     dte = _get_dte(vs_pid)
     if not dte: return
-    p = dte.Properties ('Environment', 'Documents')
-    lst_msg = []
-    for item in ['DetectFileChangesOutsideIDE', 'AutoloadExternalChanges']:
-        if not p.Item(item).Value:
-            p.Item(item).Value = 1
-            lst_msg.append (item)
+    try:
+        p = dte.Properties ('Environment', 'Documents')
+        lst_msg = []
+        for item in ['DetectFileChangesOutsideIDE', 'AutoloadExternalChanges']:
+            if not p.Item(item).Value:
+                p.Item(item).Value = 1
+                lst_msg.append (item)
+    except pywintypes.com_error:
+        pass
     if lst_msg:
         msg = 'echo "Enabled %s in VisualStudio"' % ' and '.join(lst_msg)
         _vim_command (msg)
@@ -495,7 +543,7 @@ def _vim_has_python ():
 
 #----------------------------------------------------------------------
 
-def _dte_exception (e):
+def _dte_exception (e, trace):
     if isinstance (e, pywintypes.com_error):
         try:
             msg = e[2][2]
@@ -505,7 +553,12 @@ def _dte_exception (e):
         msg = e
     if not msg:
         msg = 'Encountered unknown exception'
-    _vim_status ('ERROR %s' % msg)
+    _vim_echoerr('Error: %s' % msg)
+    while trace:
+        _vim_echoerr ('    File "%s", line %d, in %s' %
+                (trace.tb_frame.f_code.co_filename, trace.tb_lineno,
+                    trace.tb_frame.f_code.co_name))
+        trace = trace.tb_next
 
 #----------------------------------------------------------------------
 
@@ -517,12 +570,22 @@ def _vim_status (msg):
         caption = None
     if caption:
         msg = msg + ' (' + caption + ')'
-    _vim_msg (msg)
+    _vim_echo (msg)
 
 #----------------------------------------------------------------------
 
-def _vim_msg (msg):
-    _vim_command ('echo "%s"' % str(msg).replace('"', '\\"'))
+def _vim_escape(s):
+    return str(s).replace('\'', '\'\'')
+
+def _vim_echo (msg):
+    _vim_command ('echo \'%s\'' % _vim_escape(msg))
+
+def _vim_echomsg (msg):
+    _vim_command ('echomsg \'%s\'' % _vim_escape(msg))
+
+def _vim_echoerr (msg):
+    _vim_command ('echoerr \'%s\'' % _vim_escape(msg))
+
 
 #----------------------------------------------------------------------
 
