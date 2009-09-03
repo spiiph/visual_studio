@@ -1,9 +1,11 @@
 " visual_studio.vim - Visual Studio integration with Vim 
-" Author:           Michael Graz <mgraz.vim@plan10.com>
-" Customizations:   Henrik Öhman <speeph@gmail.com>
-" URL:              http://github.com/spiiph/visual_studio/tree/master
-" LastChanged:      $LastChangeDate$
-" Revision:         $Revision$
+" Author:               Henrik Öhman <speeph@gmail.com>
+" URL:                  http://github.com/spiiph/visual_studio/tree/master
+" Version:              2.0
+" LastChanged:          $LastChangeDate$
+" Revision:             $Revision$
+" Original Author:      Michael Graz <mgraz.vim@plan10.com>
+" Original Copyright:   Copyright (c) 2003-2007 Michael Graz
 
 " Pre-fork history {{{1
 " Visual Studio .NET integration with Vim 
