@@ -3,7 +3,7 @@
 '''\
 visual_studio.py - Companion file to visual_studio.vim
 Version: 2.0
-Author: Henrik Öhman <speeph@gmail.com>
+Author: Henrik Ohman <speeph@gmail.com>
 URL: http://github.com/spiiph/visual_studio/tree/master
 Original Author: Michael Graz <mgraz.vim@plan10.com>
 Original Copyright: Copyright (c) 2003-2007 Michael Graz
@@ -41,12 +41,6 @@ except:
 
 
 ############################################################ {{{1
-# Global objects
-wsh = WScriptShell()
-dte = DTEWrapper(wsh)
-vimext = VimExt(wsh)
-
-############################################################ {{{1
 # Exit function
 # Disable vim exit processing to avoid an exception at exit
 sys.exitfunc = lambda: None
@@ -58,17 +52,17 @@ logging_enabled = True
 
 if logging_enabled:
     import tempfile
-    log_file = os.path.join(tempfile.gettempdir(), "visual_studio.log")
+    log_file = os.path.join(os.path.dirname(__file__), "visual_studio.log")
     logging.basicConfig(
-            filename = log_file,
-            filemode = "w",
-            level = logging.DEBUG,
-            format = ("%(asctime)s %(levelname)-8s %(pathname)s" +
-                "(%(lineno)d)\n%(message)s\n")
-            )
+        filename = log_file,
+        filemode = "rw",
+        level = logging.DEBUG,
+        format = "%(asctime)s %(levelname)-8s %(pathname)s(%(lineno)d)\n%(message)s\n"
+        )
 else:
     logging.basicConfig(level = sys.maxint)
-logging.info("starting")
+
+logging.info("Started logging at %s" % time.ctime())
 
 ############################################################ {{{1
 class DTEWrapper:
@@ -76,17 +70,14 @@ class DTEWrapper:
 
     ############################################################ {{{2
     # Initialization and properties
-    def __init__(self, wsh):
+    def __init__(self):
         # Dict containing {pid: dte} pairs
         self.dtes = {}
 
         # The pid of the current DTE object
         self.current_dte = 0
 
-        # WScript.Shell
-        self.wsh = wsh
-
-    def __get_dte():
+    def __get_dte(self):
         if self.current_dte == 0:
             self.set_current_dte()
         return self.dtes[self.current_dte]
@@ -102,11 +93,13 @@ class DTEWrapper:
         pid = int(pid)
 
         if pid == 0 or pid == self.current_dte:
-            if self.dtes[self.current_dte] is not None:
+            if self.current_dte != 0 and \
+                    self.dtes[self.current_dte] is not None:
                 try:
                     self.dtes[self.current_dte].Solution
                     return self.dtes[self.current_dte]
-                except:
+                except Exception, e:
+                    logging.exception(e)
                     del self.dtes[self.current_dte]
 
         try:
@@ -116,7 +109,8 @@ class DTEWrapper:
             else:
                 self.current_dte = self.dtes.keys()[0]
             return self.dtes[self.current_dte]
-        except pywintypes.com_error:
+        except pywintypes.com_error, e:
+            logging.exception(e)
             VimExt.echomsg("Error: Cannot access DTE object. " +
                 "Is Visual Studio running?")
             return None
@@ -125,13 +119,14 @@ class DTEWrapper:
     def update_dtes(self):
         '''Populate the self.dtes dict with {pid: dte} elements from the
         Running Object Table.'''
+        logging.info("== DTE.update_dtes")
         self.dtes = {}
         rot = pythoncom.GetRunningObjectTable()
         rot_enum = rot.EnumRunning()
         context = pythoncom.CreateBindCtx(0)
         while 1:
             monikers = rot_enum.Next()
-            if monikers is None:
+            if not monikers:
                 break
 
             display_name = monikers[0].GetDisplayName(context, None)
@@ -141,12 +136,13 @@ class DTEWrapper:
 
                 try:
                     pid = int(display_name.rpartition(":")[-1])
-                except ValueError:
+                except ValueError, e:
+                    logging.exception(e)
                     pid = 0
 
                 dte = win32com.client.Dispatch(
                         rot.GetObject(monikers[0]).QueryInterface(
-                            pythoncom.IID_Dispatch))
+                            pythoncom.IID_IDispatch))
                 self.dtes[pid] = dte
 
     ############################################################ {{{2
@@ -161,8 +157,8 @@ class DTEWrapper:
         try:
             while build.BuildState == vsBuildStateInProgress:
                 time.sleep(0.1)
-        except:
-            pass
+        except Exception, e:
+            logging.exception(e)
 
     ############################################################ {{{2
     def activate(self):
@@ -173,7 +169,8 @@ class DTEWrapper:
         try:
             self.dte.MainWindow.Activate()
             wsh().AppActivate(self.dte.MainWindow.Caption)
-        except pywintypes.com_error:
+        except pywintypes.com_error, e:
+            logging.exception(e)
             VimExt.echomsg("Error: Cannot access WScript Shell object.")
 
     ############################################################ {{{2
@@ -190,8 +187,8 @@ class DTEWrapper:
                 if not properties.Item(item).Value:
                     p.Item(item).Value = 1
                     enabled.append(item)
-        except pywintypes.com_error:
-            pass
+        except pywintypes.com_error, e:
+            logging.exception(e)
         VimExt.echo("Enabled %s in VisualStudio" % " and ".join(enabled))
 
     ############################################################ {{{2
@@ -203,21 +200,23 @@ class DTEWrapper:
         try:
             if self.dte.CSharpProjects.Count:
                 return 1
-        except pywintypes.com_error, AttributeError:
-            pass
+        except (pywintypes.com_error, AttributeError), e:
+            logging.exception(e)
         return 0
 
     ############################################################ {{{2
-    def output(self, output_file, caption):
+    def get_output(self, output_file, caption):
         '''Fetch the output from a command and write it to a file.'''
-        logging.info("== DTE.output %s" % vars())
+        logging.info("== DTE.output output_file, caption: %s, %s" %
+                (output_file, caption))
 
         if self.dte is None:
             return
 
         try:
             window = self.dte.Windows.Item(caption)
-        except pywintypes.com_error:
+        except pywintypes.com_error, e:
+            logging.exception(e)
             VimExt.echomsg("Error: window not active (%s)" % caption)
             return
 
@@ -235,7 +234,7 @@ class DTEWrapper:
     ############################################################ {{{2
     def compile_file(self, output_file):
         '''Compile the current file.'''
-        logging.info("== DTE.compile_file %s" % vars())
+        logging.info("== DTE.compile_file output_file: %s" % output_file)
 
         if self.dte is None:
             return
@@ -250,14 +249,15 @@ class DTEWrapper:
 
         # Wait for build to complete
         self.wait_for_build()
-        self.output(output_file, "Output")
+        self.get_output(output_file, "Output")
         #VimExt.vim_status("Compile file complete")
         VimExt.vim_activate()
 
     ############################################################ {{{2
     def build_project(self, output_file, project_name = None):
         '''Build a project by name or build the startup project.'''
-        logging.info("== DTE.build_project %s" % vars())
+        logging.info("== DTE.build_project output_file, project_name: %s, %s" %
+                (output_file, proj))
 
         if self.dte is None:
             return
@@ -276,8 +276,8 @@ class DTEWrapper:
             project = [x for x in solution.Projects
                     if x.Name == project_name][0]
 
-            logging.info(("== DTE.build_project configuration_name: " +
-                "%s project_unique_name: %s") % (config, project.UniqueName))
+            logging.info(("== DTE.build_project configuration_name, " +
+                "project_unique_name: %s, %s") % (config, project.UniqueName))
 
             solution.SolutionBuild.BuildProject(config, project.UniqueName, 1)
         except Exception, e:
@@ -288,14 +288,14 @@ class DTEWrapper:
 
         # Wait for build to complete
         self.wait_for_build()
-        self.output(output_file, "Output")
+        self.get_output(output_file, "Output")
         #VimExt.status("Build project complete")
         VimExt.activate()
 
     ############################################################ {{{2
     def build_solution(self, output_file):
         '''Build the solution in the current DTE.'''
-        logging.info("== DTE.build_solution %s" % vars())
+        logging.info("== DTE.build_solution output_file: %s" % output_file)
 
         if self.dte is None:
             return
@@ -316,20 +316,21 @@ class DTEWrapper:
 
         # Wait for build to complete
         self.wait_for_build()
-        self.output(output_file, "Output")
+        self.get_output(output_file, "Output")
         #VimExt.status("Build solution complete")
         VimExt.activate()
 
     ############################################################ {{{2
     def set_startup_project(self, project_name):
         '''Set the startup project in Visual Studio.'''
-        logging.info("== DTE.set_startup_project %s" % vars())
+        logging.info("== DTE.set_startup_project project_name: %s" %
+                project_name)
 
         if self.dte is None:
             return
 
         try:
-            self.dte.Solution.Properties("StartupProject").Value =
+            self.dte.Solution.Properties("StartupProject").Value = \
                 project_name
         except Exception, e:
             logging.exception(e)
@@ -340,13 +341,13 @@ class DTEWrapper:
     ############################################################ {{{2
     def get_file(self):
         '''Get the current file from Visual Studio.'''
-        logging.info("== DTE.get_file %s" % vars())
+        logging.info("== DTE.get_file")
 
         if self.dte is None:
             return
 
         doc = dte.ActiveDocument
-        if doc is None
+        if doc is None:
             VimExt.echomsg("Error: No file active in Visual Studio!")
             return
         point = doc.Selection.ActivePoint
@@ -360,7 +361,8 @@ class DTEWrapper:
     ############################################################ {{{2
     def put_file(self, filename, line, col):
         '''Send the current file to Visual Studio.'''
-        logging.info("== DTE.put_file %s" % vars())
+        logging.info("== DTE.put_file filename, line, col: %s, %s, %s" %
+                (filename, line, col))
 
         logging.info("== DTE.put_file abspath %s" %
                 (os.path.abspath(filename)))
@@ -376,22 +378,23 @@ class DTEWrapper:
         self.activate()
 
     ############################################################ {{{2
-    def update_instance_list(self):
+    def update_solution_list(self):
         '''Update Vim's list of solutions.'''
-        logging.info("== DTE.update_instance_list %s" % vars())
-        instances = [[key, self.dtes[key].Solution.FullName]
+        logging.info("== DTE.update_solution_list")
+        self.update_dtes()
+        instances = [[key, str(self.dtes[key].Solution.FullName)]
                 for key in self.dtes.keys()]
         VimExt.command("let s:visual_studio_solutions = %s" % instances)
 
     ############################################################ {{{2
     def update_project_list(self):
         '''Update Vim's list of projects.'''
-        logging.info("== DTE.update_project_list %s" % vars())
+        logging.info("== DTE.update_project_list")
 
         if self.dte is None:
             return
 
-        startup_project_name =
+        startup_project_name = \
             self.dte.Solution.Properties("StartupProject").Value
         startup_project_index = -1
         index = 0
@@ -407,50 +410,40 @@ class DTEWrapper:
                 startup_project_index)
 
     ############################################################ {{{3
-    def get_project_tree(self, project):
+    def get_project_tree(self, item):
         '''Returns a tree (nested lists) of projects and files in projects.
-        The first item is the project or project item name. The second item
+        The first item is the item or item item name. The second item
         contains a list of children or a filename.'''
-        def com_property(object, attr, default = None):
-            try:
-                return getattr(object, attr, default)
-            except:
-                return default
+        logging.debug("== get_project_tree name: %s" % item.Name)
 
-        name = com_property(project, "Name")
-        if name is None:
-            return []
+        # NOTE: This assumes that only VCFile item kinds are of interest
+        #       as leaves, and that VCFile items are always leaves.
+        if item.Properties is not None:
+            if item.Properties.Item("Kind").Value == "VCFile":
+                return [str(item.Name),
+                        str(item.Properties.Item("FullPath").Value)]
 
-        name = str(name)
-        properties = com_property(project, "Properties")
-        if properties is not None:
-            try:
-                full_path = str(properties["FullPath"])
-            except:
-                full_path = None
-            # Item is a leaf; return name and full path
-            if full_path and os.path.isfile(full_path):
-                return [name, full_path]
+        # If we didn't find a leaf (VCFile), recurse deeper
+        children = []
 
-        # Item is a sub project; recurse deeper
-        sub_project = com_property(project, "SubProject")
-        if sub_project:
-            return [name, self.get_project_tree(sub_project)]
+        # Item has a sub project
+        #if item.SubProject is not None:
+        #    children += self.get_project_tree(item.SubProject)
 
-        # Item is a project items container; recurse deeper for each project
-        # item
-        project_items = com_property(project, "ProjectItems")
-        if project_items:
-            children = [self.get_project_tree(x) for x in project_items]
-            return [name, children]
+        # Item has project items
+        if item.ProjectItems is not None:
+            temp = [self.get_project_tree(x) for x in item.ProjectItems]
+            logging.debug("== get_project_tree name: %s" % temp)
+            children += temp
 
-        return [name, []]
+        return [str(item.Name), children]
 
     ############################################################ {{{2
     def update_project_files_list(self, project_name = None):
         '''Update Vim's list of files for the named project or the startup
         project.'''
-        logging.info("== DTE.get_project_files %s" % vars())
+        logging.info("== DTE.get_project_files project_name: %s" %
+            project_name)
 
         if self.dte is None:
             return
@@ -474,15 +467,18 @@ class DTEWrapper:
         object.'''
         files = []
         for i in items:
+            # NOTE: This assumes that only VCFile item kinds are of interest
+            #       as leaves.
             if i.Properties.Item("Kind").Value == "VCFile":
                 files.append(i.Properties.Item("FullPath").Value)
-            else:
-                files += self.get_project_items_files(i.ProjectItems)
+            if i.SubProject is not None:
+                files += self.get_project_items_files(i.SubProject.ProjectItems)
+            files += self.get_project_items_files(i.ProjectItems)
         return files
 
     ############################################################ {{{2
     def get_task_list(self, output_file):
-        logging.info("== DTE.task_list %s" % vars())
+        logging.info("== DTE.task_list output_file: %s" % output_file)
 
         if self.dte is None:
             return
@@ -500,17 +496,20 @@ class DTEWrapper:
         for item in task_list_window.Object.TaskItems:
             try:
                 filename = item.FileName
-            except:
+            except Exception, e:
+                logging.exception(e)
                 filename = "<no-filename>"
 
             try:
                 line = item.Line
-            except:
+            except Exception, e:
+                logging.exception(e)
                 line = "<no-line>"
 
             try:
                 description = item.Description
-            except:
+            except Exception, e:
+                logging.exception(e)
                 description = "<no-description>"
 
             f.write("%s(%s) : %s" % (filename, line, description))
@@ -526,18 +525,22 @@ class WScriptShell:
 
 ############################################################ {{{1
 class VimExt:
+    ############################################################ {{{2
+    # Initialization
     '''Vim extension class for DTEWrapper.'''
 
     __pid = None
     __has_python = None
 
+    @classmethod
     ############################################################ {{{2
-    def set_pid(pid):
+    def set_pid(cls, pid):
         '''Set the PID of Vim when issued from the command line.'''
         VimExt.__pid = pid
 
+    @classmethod
     ############################################################ {{{2
-    def has_python():
+    def has_python(cls):
         '''Check if Vim was compiled with the +python feature.'''
         if VimExt.__has_python is None:
             if globals().get("vim") is None:
@@ -546,15 +549,17 @@ class VimExt:
                 VimExt.__has_python = int(vim.eval("has('python')"))
         return VimExt.__has_python
 
+    @classmethod
     ############################################################ {{{2
-    def activate():
+    def activate(cls):
         '''Activate Vim.'''
         if VimExt.__pid is None:
             VimExt.__pid = os.getpid()
         wsh().AppActivate(VimExt.__pid)
 
+    @classmethod
     ############################################################ {{{2
-    def command(command_list):
+    def command(cls, command_list):
         '''Send a Vim command to Vim, either using vim.command() or print, if
         called from the command line.'''
         logging.info("== VimExt.command command_list %s" % command_list)
@@ -567,13 +572,15 @@ class VimExt:
             else:
                 print cmd
 
+    @classmethod
     ############################################################ {{{2
-    def exception(e, trace):
+    def exception(cls, e, trace):
         '''Print the output of an exception in Vim.'''
         if isinstance(e, pywintypes.com_error):
             try:
                 msg = e[2][2]
-            except:
+            except Exception, e:
+                logging.exception(e)
                 msg = None
         else:
             msg = e
@@ -586,37 +593,49 @@ class VimExt:
                         trace.tb_frame.f_code.co_name))
             trace = trace.tb_next
 
+    @classmethod
     ############################################################ {{{2
-    def VimExt.escape(s):
+    def escape(cls, s):
         '''Escape a string for :echo, :echomsg and :echoerr.'''
         return str(s).replace("'", "''")
 
+    @classmethod
     ############################################################ {{{2
-    def VimExt.echo(msg):
+    def echo(cls, msg):
         ''':echo a message.'''
         VimExt.command("echo '%s'" % VimExt.escape(msg))
 
+    @classmethod
     ############################################################ {{{2
-    def VimExt.echomsg(msg):
+    def echomsg(cls, msg):
         ''':echomsg a message.'''
         VimExt.command("echomsg '%s'" % VimExt.escape(msg))
 
+    @classmethod
     ############################################################ {{{2
-    def VimExt.echoerr(msg):
+    def echoerr(cls, msg):
         ''':echoerr a message.'''
         VimExt.command("echoerr '%s'" % VimExt.escape(msg))
 
+############################################################ {{{1
+# Global objects
+wsh = WScriptShell()
+dte = DTEWrapper()
 
+############################################################ {{{1
 def dte_execute(name, *args):
-    if hasattr(dte, name):
-        VimExt.echoerr("Error: no such function %s in %s" %
-                (name, prog))
+    '''Wrapper function for calling functions in the global DTE object.'''
+    logging.info("== dte_execute name: %s" % name)
+    if not hasattr(dte, name):
+        VimExt.echoerr("Error: no such function %s" % name)
     else:
         function = getattr(dte, name)
-        function(args)
+        function(*args)
 
-############################################################ {{{2
+############################################################ {{{1
 def main():
+    '''Function handling the indirection when called from the command
+    line.'''
     prog = os.path.basename(sys.argv[0])
     logging.info("== main sys.argv: %s" % sys.argv)
     if len(sys.argv) == 1:
@@ -629,10 +648,11 @@ def main():
     try:
         dte_execute(sys.argv[1], *sys.argv[2:])
     except TypeError, e:
+        logging.exception(e)
         VimExt.exception(e, sys.exc_traceback)
 
 if __name__ == "__main__":
     main()
 
 # vim: set sts=4 sw=4 fdm=marker:
-# vim: fdt=v\:folddashes\ .\ substitute(getline(v\:foldstart+1),\ '[#\:]',\ '',\ 'g'):
+# vim: fdt=v\:folddashes\ .\ "\ "\ .\ substitute(getline(v\:foldstart+1),\ '^\\s\\+\\|#\\s*\\|\:',\ '',\ 'g'):

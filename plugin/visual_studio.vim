@@ -43,28 +43,24 @@ scriptencoding utf-8
 " If setting special versions of the following vs_ files,
 " make sure to escape backslashes.
 
-if !exists('g:visual_studio_task_list')
-    let g:visual_studio_task_list = $TEMP . '\\vs_task_list.txt'
-endif
-
 if !exists('g:visual_studio_output')
     let g:visual_studio_output = $TEMP . '\\vs_output.txt'
 endif
 
-if !exists('g:visual_studio_find_results_1')
-    let g:visual_studio_find_results_1 = $TEMP . '\\vs_find_results_1.txt'
-endif
-
-if !exists('g:visual_studio_find_results_2')
-    let g:visual_studio_find_results_2 = $TEMP . '\\vs_find_results_2.txt'
+if !exists('g:visual_studio_use_location_list')
+    let g:visual_studio_use_location_list = 0
 endif
 
 if !exists('g:visual_studio_quickfix_height')
     let g:visual_studio_quickfix_height = 20
 endif
 
-if !exists('g:visual_studio_quickfix_errorformat_cpp')
-    let g:visual_studio_quickfix_errorformat_cpp  = 
+if !exists('g:visual_studio_errorformat')
+    let g:visual_studio_errorformat = {}
+endif
+
+if !exists('g:visual_studio_errorformat["cpp"]')
+    let g:visual_studio_errorformat["cpp"]  = 
         \ '%*\\d>%f(%l)\ :\ %m,' .
         \ '%f(%l)\ :\ %m,' .
         \ '\ %#%f(%l)\ :\ %m'
@@ -72,20 +68,16 @@ if !exists('g:visual_studio_quickfix_errorformat_cpp')
     " \'%*\\d>c1xx\ :\ fatal\ error\ %t%n:\ %m:\ ''%f''%.%#' " c1xx errors
 endif
 
-if !exists('g:visual_studio_quickfix_errorformat_csharp')
-    let g:visual_studio_quickfix_errorformat_csharp = '\ %#%f(%l\\\,%c):\ %m'
+if !exists('g:visual_studio_errorformat["csharp"]')
+    let g:visual_studio_errorformat["csharp"] = '\ %#%f(%l\\\,%c):\ %m'
 endif
 
-if !exists('g:visual_studio_quickfix_errorformat_find_results')
-    let g:visual_studio_quickfix_errorformat_find_results = '\ %#%f(%l):%m'
+if !exists('g:visual_studio_errorformat["find_results"]')
+    let g:visual_studio_errorformat["find_results"] = '\ %#%f(%l):%m'
 endif
 
-if !exists('g:visual_studio_quickfix_errorformat_task_list')
-    let g:visual_studio_quickfix_errorformat_task_list = '%f(%l)\ %#:\ %#%m'
-endif
-
-if !exists('g:visual_studio_quickfix_spec')
-    let g:visual_studio_quickfix_spec = 'copen'
+if !exists('g:visual_studio_errorformat_task_list')
+    let g:visual_studio_errorformat["task_list"] = '%f(%l)\ %#:\ %#%m'
 endif
 
 if !exists('g:visual_studio_python_exe')
@@ -103,7 +95,7 @@ endif
 "----------------------------------------------------------------------
 " Local variables {{{1
 
-let s:visual_studio_module = 'visual_studio'
+let s:visual_studio_module = expand("<sfile>:t:r")
 let s:visual_studio_python_init = 0
 let s:visual_studio_location = expand("<sfile>:h")
 let s:visual_studio_solutions = []
@@ -186,28 +178,29 @@ endfunction
 " arguments. If Vim was compiled with +python, use the :python command.
 " Otherwise, use the system() function to run the python executable, and
 " run :execute on the output.
-function! s:DTEExec(fcn_py, ...)
+function! s:DTEExec(py_func, ...)
     if !s:PythonInit()
         return
     endif
 
-    let arglist = [s:GetSolutionPID()]
-    for pyarg in a:000
-        call add(arglist, '"' . pyarg . '"')
+    let arglist = ['"' . a:py_func . '"']
+    for arg in a:000
+        call add(arglist, '"' . arg . '"')
     endfor
 
     if has("python")
         let pyargs = join(arglist, ",")
-        exe printf("python %s.%s(%s)", s:visual_studio_module, a:fcn_py, pyargs)
+        exe printf("python %s.dte_execute(%s)",
+            \ s:visual_studio_module, pyargs)
     else
         let vim_pid = s:GetPid()
         if vim_pid > 0
-            add(arglist, " vim_pid=" . vim_pid)
+            call add(arglist, " vim_pid=" . vim_pid)
         endif
         let pyargs = join(arglist, " ")
         " Here the output of the python script is executed as a vim command
-        let cmd = printf("%s %s %s %s", g:visual_studio_python_exe, 
-            \ s:visual_studio_module, a:fcn_py, pyargs)
+        let cmd = printf("%s %s %s", g:visual_studio_python_exe, 
+            \ s:visual_studio_module, pyargs)
         let result = system(cmd)
         exe result
     endif
@@ -243,6 +236,9 @@ function! DTEReload()
         return
     endif
     if has("python")
+        "exe "python if globals().has_key(" . s:visual_studio_module . "):" .
+        "    \"reload(" . s:visual_studio_module . "); "
+        "    \"print '%s is reloaded!' % __file__"
         exe "python reload(" . s:visual_studio_module . ")"
         exe "python import " . s:visual_studio_module
         echo s:visual_studio_module . ".py is reloaded."
@@ -257,7 +253,7 @@ endfunction
 " Get the current file from Visual Studio, and open it in Vim.
 function! DTEGetFile()
     let split = &modified && !&hidden && !&autowriteall
-    call s:DTEExec("dte_get_file", split)
+    call s:DTEExec("get_file", split)
 endfunction
 
 "----------------------------------------------------------------------
@@ -270,7 +266,7 @@ function! DTEPutFile()
         echo "No file to send to Visual Studio."
         return 0
     endif
-    call s:DTEExec("dte_put_file", filename, line("."), col("."))
+    call s:DTEExec("put_file", filename, line("."), col("."))
     return 1
 endfunction
 
@@ -327,11 +323,11 @@ function! s:DTEGetProjectFiles(...)
 
     " The following call will assign values to
     " s:visual_studio_lst_project_files
-    let s:visual_studio_lst_project_files = []
+    let s:visual_studio_project_files = []
     if exists("project_name")
-        call s:DTEExec("dte_get_files", project_name)
+        call s:DTEExec("update_project_files", project_name)
     else
-        call s:DTEExec("dte_get_files")
+        call s:DTEExec("update_project_files")
     endif
 
     " Filter files with extensions that should be ignored
@@ -358,8 +354,8 @@ endfunction
 " Task list {{{2
 " Get the task list from Visual Studio 
 function! DTETaskList()
-    call s:DTEExec("dte_task_list", g:visual_studio_task_list)
-    call s:DTELoadErrorFile(g:visual_studio_task_list, "Task List")
+    call s:DTEExec("get_task_list", g:visual_studio_output)
+    call s:DTELoadErrorFile("Task List")
     call s:DTEQuickfixOpen()
 endfunction
 
@@ -367,8 +363,8 @@ endfunction
 " Output {{{2
 " Get the output from a build or compilation from Visual Studio
 function! DTEOutput()
-    call s:DTEExec("dte_output", g:visual_studio_output, "Output")
-    call s:DTELoadErrorFile(g:visual_studio_output, "Output")
+    call s:DTEExec("get_output", g:visual_studio_output, "Output")
+    call s:DTELoadErrorFile("Output")
     call s:DTEQuickfixOpen()
 endfunction
 
@@ -377,12 +373,13 @@ endfunction
 " Get find results from Visual Studio
 function! DTEFindResults(which)
     if a:which == 1
-        call s:DTEExec("dte_output", &errorfile, "Find Results 1")
-        s:DTELoadErrorFile(g:visual_studio_find_results_1, "Find Results")
+        call s:DTEExec("get_output", g:visual_studio_output,
+            \ "Find Results 1")
     else
-        call s:DTEExec("dte_output", &errorfile, "Find Results 2")
-        s:DTELoadErrorFile(g:visual_studio_find_results_1, "Find Results")
+        call s:DTEExec("get_output", g:visual_studio_output,
+            \ "Find Results 2")
     endif
+    s:DTELoadErrorFile("Find Results")
     call s:DTEQuickfixOpen()
 endfunction
 
@@ -390,28 +387,28 @@ endfunction
 " Load error file {{{2
 " Load output, task list or find results from Visual Studio into the quickfix
 " list or a location list. 
-function! DTELoadErrorFile(file, type)
+function! DTELoadErrorFile(type)
     " save errorformat
     let saveefm = &errorformat
 
     " set errorformat
     if a:type == "Task List"
         exe "set errorformat=".
-            \ g:visual_studio_quickfix_errorformat_task_list
+            \ g:visual_studio_errorformat["task_list"]
     elseif a:type == "Find Results"
         exe "set errorformat+=".
-            \ g:visual_studio_quickfix_errorformat_find_results
+            \ g:visual_studio_errorformat["find_results"]
     else
         exe "set errorformat =". 
-            \ g:visual_studio_quickfix_errorformat_cpp
+            \ g:visual_studio_errorformat["cpp"]
         exe "set errorformat+=". 
-            \ g:visual_studio_quickfix_errorformat_csharp
+            \ g:visual_studio_errorformat["csharp"]
     endif
 
     if g:visual_studio_use_location_list
-        exe "lfile " . a:file
+        exe "lfile " . g:visual_studio_output
     else
-        exe "cfile  " . a:file
+        exe "cfile  " . g:visual_studio_output
     endif
 
     " restore errorformat
@@ -441,8 +438,8 @@ function! DTECompileFile()
     if !DTEPutFile()
         return
     endif
-    call s:DTEExec("dte_compile_file", g:visual_studio_output)
-    call s:DTELoadErrorFile(g:visual_studio_output, "Output")
+    call s:DTEExec("compile_file", g:visual_studio_output)
+    call s:DTELoadErrorFile("Output")
     call s:DTEQuickfixOpen()
 endfunction
 
@@ -450,20 +447,16 @@ endfunction
 " Build project {{{2
 " Build a project. If no argument is supplied, build the Startup Project.
 function! DTEBuildProject(...)
-    " Optional args passed in are
-    "  a:1 -- name of the project to build
-    if a:0 >= 1
-        let project_name = a:1
-    else
-        let project_name = ""
-    endif
-
     if g:visual_studio_write_before_build
         wall
     endif
 
-    call s:DTEExec("dte_build_project", g:visual_studio_output, project_name)
-    call s:DTELoadErrorFile(g:visual_studio_output, "Output")
+    if a:0 >= 1
+        call s:DTEExec("build_project", g:visual_studio_output, a:1)
+    else
+        call s:DTEExec("build_project", g:visual_studio_output)
+    endif
+    call s:DTELoadErrorFile("Output")
     call s:DTEQuickfixOpen()
 endfunction
 
@@ -475,8 +468,8 @@ function! DTEBuildSolution()
         wall
     endif
 
-    call s:DTEExec("dte_build_solution", g:visual_studio_output)
-    call s:DTELoadErrorFile(g:visual_studio_output, "Output")
+    call s:DTEExec("build_solution", g:visual_studio_output)
+    call s:DTELoadErrorFile("Output")
     call s:DTEQuickfixOpen()
 endfunction
 
@@ -488,6 +481,7 @@ endfunction
 " List all Visual Studio solutions
 function! DTEListSolutions()
     " Populate s:visual_studio_solutions
+    echo "Searching for Visual Studio instances ..."
     call s:DTEGetInstances()
     if len(s:visual_studio_solutions) == 0
         echo "No Visual Studio instances found"
@@ -505,6 +499,7 @@ endfunc
 " solution number.
 function! DTESelectSolution(...)
     " Populate s:visual_studio_solutions
+    echo "Searching for Visual Studio instances ..."
     call s:DTEGetInstances()
     if len(s:visual_studio_solutions) == 0
         echo "No VisualStudio instances found"
@@ -522,8 +517,9 @@ function! DTESelectSolution(...)
         let menu = ["Select solution"]
         for i in range(len(s:visual_studio_solutions))
             let selected = (s:visual_studio_solution_index == i)
-            add(menu, s:CreateMenuEntry(selected, " ", i + 1,
+            let entry = s:CreateMenuEntry(selected, " ", i + 1,
                 \ s:GetSolutionName(i))
+            call add(menu, entry)
         endfor
         let index = inputlist(menu)
     endif
@@ -542,6 +538,7 @@ endfunc
 " Refresh the VisualStudio.Solutions menu, and display the popup menu.
 function! s:MenuRefreshSolutions()
     " Populate s:visual_studio_solutions
+    echo "Searching for Visual Studio instances ..."
     call s:DTEGetInstances()
     if len(s:visual_studio_solutions) == 0
         echo "No Visual Studio instances found"
@@ -570,9 +567,8 @@ endfunc
 " solution list.
 function! s:DTEGetInstances()
     let s:visual_studio_solutions = []
-    echo "Searching for Visual Studio instances ..."
     " The following call will populate s:visual_studio_solutions
-    call s:DTEExec("dte_list_instances")
+    call s:DTEExec("update_solution_list")
     call s:UpdateSolutionMenu()
 endfunction
 
@@ -665,8 +661,9 @@ endfunction
 " List all projects in the current solution
 function! DTEListProjects()
     " Populate s:visual_studio_projects
-    call s:DTEGetProjects()
-    if len(s:visual_studio_projects)
+    "echo "Searching for Visual Studio projects ..."
+    "call s:DTEGetProjects()
+    if len(s:visual_studio_projects) == 0
         echo "No projects found in solution" 
     else
         for i in range(len(s:visual_studio_projects))
@@ -682,9 +679,7 @@ endfunc
 " Select a project by name, or list all projects in the current solution and
 " select by project number.
 function! DTESelectProject(...)
-    " Populate s:visual_studio_projects
-    call s:DTEGetProjects()
-    if len(s:visual_studio_projects)
+    if len(s:visual_studio_projects) == 0
         echo "No projects found in solution" 
         return
     endif
@@ -700,8 +695,9 @@ function! DTESelectProject(...)
         let menu = ["Select project"]
         for i in range(len(s:visual_studio_projects))
             let selected = (s:visual_studio_project_index == i)
-            add(menu, s:CreateMenuEntry(selected, " ", i + 1,
-                \ s:GetProjectName(i)))
+            let entry = s:CreateMenuEntry(selected, " ", i + 1,
+                \ s:GetProjectName(i))
+            call add(menu, entry)
         endfor
         let index = inputlist(menu)
     endif
@@ -720,8 +716,6 @@ endfunc
 " Refresh the VisualStudio.Projects menu for the current solution,
 " and display the popup menu.
 function! s:DTERefreshProjectMenu()
-    " Populate s:visual_studio_projects
-    call s:DTEGetProjects()
     if len(s:visual_studio_projects) == 0
         echo "No projects found in solution"
     else
@@ -736,9 +730,8 @@ endfunc
 " Get the projects in the current solution and add them to the project list.
 function! s:DTEGetProjects()
     let s:visual_studio_projects = []
-    echo "Searching for Visual Studio instances ..."
     " The following call will populate s:visual_studio_projects
-    call s:DTEExec("dte_list_projects")
+    call s:DTEExec("update_project_list")
     call s:UpdateProjectMenu()
 endfunction
 
@@ -750,9 +743,9 @@ function! s:SelectProjectByIndex(index)
     if a:index < 0 || a:index >= len(s:visual_studio_projects)
         return 0
     endif
-    if index != s:visual_studio_project_index
-        call s:DTEExec("dte_set_startup_project", s:GetProjectName(index))
-        let s:visual_studio_project_index = index
+    if a:index != s:visual_studio_project_index
+        call s:DTEExec("set_startup_project", s:GetProjectName(a:index))
+        let s:visual_studio_project_index = a:index
         call s:UpdateProjectMenu()
     endif
 endfunction
@@ -805,8 +798,8 @@ function! s:UpdateProjectSubMenu(parent, name, value)
             call s:UpdateProjectSubMenu(item, child[0], child[1])
         endfor
     else
-        exe "amenu <silent> " . label . 
-            \ " :call s:OpenProjectSubMenu('" . a:value . "')<CR>"
+        exe "amenu <silent> " . item . 
+            \ " :call <SID>OpenProjectSubMenu('" . a:value . "')<CR>"
         return
     endif
 endfunction
@@ -920,8 +913,8 @@ nnoremap <silent> <Plug>VSFindResults2 :call DTEFindResults(2)<CR>
 nnoremap <silent> <Plug>VSBuildSolution :call DTEBuildSolution()<CR>
 nnoremap <silent> <Plug>VSBuildProject :call DTEBuildProject()<CR>
 nnoremap <silent> <Plug>VSCompileFile :call DTECompileFile()<CR>
-nnoremap <silent> <Plug>VSGetSolutions :call DTEGetSolutions()<CR>
-nnoremap <silent> <Plug>VSGetProjects :call DTEGetProjects()<CR>
+nnoremap <silent> <Plug>VSSelectSolution :call DTESelectSolution()<CR>
+nnoremap <silent> <Plug>VSSelectProject :call DTESelectProject()<CR>
 nnoremap <silent> <Plug>VSListFiles :call DTEListFiles()<CR>
 nnoremap <silent> <Plug>VSGetFiles :call DTEGetFiles()<CR>
 nnoremap <silent> <Plug>VSAbout :call DTEAbout()<CR>
@@ -939,8 +932,8 @@ if !exists("g:visual_studio_mapping") || !g:visual_studio_mapping
     nmap <silent> <Leader>vb <Plug>VSBuildSolution
     nmap <silent> <Leader>vu <Plug>VSBuildProject
     nmap <silent> <Leader>vc <Plug>VSCompileFile
-    nmap <silent> <Leader>vs <Plug>VSGetSolutions
-    nmap <silent> <Leader>vj <Plug>VSGetProjects
+    nmap <silent> <Leader>vs <Plug>VSSelectSolution
+    nmap <silent> <Leader>vj <Plug>VSSelectProject
     nmap <silent> <Leader>vl <Plug>VSListFiles
     nmap <silent> <Leader>ve <Plug>VSGetFiles
     nmap <silent> <Leader>va <Plug>VSAbout
@@ -960,8 +953,10 @@ if !exists("g:visual_studio_commands") || g:visual_studio_commands != 0
     com! -nargs=* DTEListFiles call DTEListFiles(<f-args>)
     com! -nargs=* DTEGetFiles call DTEGetFiles(<f-args>)
     com! DTECompileFile call DTECompileFile()
-    com! DTEGetSolutions call DTEGetSolutions()
-    com! DTEGetProjects call DTEGetProjects()
+    com! -nargs=* DTESelectSolution call DTESelectSolution(<f-args>)
+    com! DTEListSolutions call DTEListSolutions()
+    com! -nargs=* DTESelectProject call DTESelectProject(<f-args>)
+    com! DTEListProjects call DTEListProjects()
     com! DTEAbout call DTEAbout()
     com! DTEOnline call DTEOnline()
     com! DTEReload call DTEReload()
