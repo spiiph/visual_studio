@@ -57,7 +57,8 @@ if logging_enabled:
         filename = log_file,
         filemode = "rw",
         level = logging.DEBUG,
-        format = "%(asctime)s %(levelname)-8s %(pathname)s(%(lineno)d)\n%(message)s\n"
+        format = "%(asctime)s %(levelname)-8s %(pathname)s(%(lineno)d)\n" +
+            "%(message)s\n"
         )
 else:
     logging.basicConfig(level = sys.maxint)
@@ -90,6 +91,8 @@ class DTEWrapper:
         '''Get the DTE object corresponding to pid. If pid is 0, get the
         current DTE object. If the current DTE object is None, get the first
         DTE object in the self.dtes dict.'''
+        logging.info("== DTE.set_current_dte pid: %s" % str(pid))
+
         pid = int(pid)
 
         if pid == 0 or pid == self.current_dte:
@@ -168,7 +171,7 @@ class DTEWrapper:
 
         try:
             self.dte.MainWindow.Activate()
-            wsh().AppActivate(self.dte.MainWindow.Caption)
+            #wsh().AppActivate(self.dte.MainWindow.Caption)
         except pywintypes.com_error, e:
             logging.exception(e)
             VimExt.echomsg("Error: Cannot access WScript Shell object.")
@@ -189,7 +192,8 @@ class DTEWrapper:
                     enabled.append(item)
         except pywintypes.com_error, e:
             logging.exception(e)
-        VimExt.echo("Enabled %s in VisualStudio" % " and ".join(enabled))
+        if len(enabled) != 0:
+            VimExt.echo("Enabled %s in VisualStudio" % " and ".join(enabled))
 
     ############################################################ {{{2
     def has_csharp_projects(self):
@@ -244,33 +248,35 @@ class DTEWrapper:
         except Exception, e:
             logging.exception(e)
             VimExt.exception(e, sys.exc_traceback)
-            VimExt.vim_activate()
+            VimExt.activate()
             return
 
         # Wait for build to complete
         self.wait_for_build()
         self.get_output(output_file, "Output")
         #VimExt.vim_status("Compile file complete")
-        VimExt.vim_activate()
+        VimExt.activate()
 
     ############################################################ {{{2
     def build_project(self, output_file, project_name = None):
         '''Build a project by name or build the startup project.'''
         logging.info("== DTE.build_project output_file, project_name: %s, %s" %
-                (output_file, proj))
+                (output_file, project_name))
 
         if self.dte is None:
             return
 
-        if has_csharp_projects():
+        if self.has_csharp_projects():
             self.dte.Documents.CloseAll()
         self.set_autoload()
         self.activate()
-        self.output_activate()
 
         try:
             solution = self.dte.Solution
-            config = solution.ActiveConfiguration.Name
+            try:
+                config = solution.ActiveConfiguration.Name
+            except:
+                config = solution.Properties["ActiveConfig"]
             if project_name is None:
                 project_name = solution.Properties("StartupProject").Value
             project = [x for x in solution.Projects
@@ -304,7 +310,6 @@ class DTEWrapper:
             self.dte.Documents.CloseAll()
         self.set_autoload()
         self.activate()
-        self.output_activate()
 
         try:
             self.dte.Solution.SolutionBuild.Build(1)
@@ -339,14 +344,14 @@ class DTEWrapper:
         #VimExt.status("Startup project set to %s" % project_name)
 
     ############################################################ {{{2
-    def get_file(self):
+    def get_file(self, action):
         '''Get the current file from Visual Studio.'''
-        logging.info("== DTE.get_file")
+        logging.info("== DTE.get_file action: %s" % action)
 
         if self.dte is None:
             return
 
-        doc = dte.ActiveDocument
+        doc = self.dte.ActiveDocument
         if doc is None:
             VimExt.echomsg("Error: No file active in Visual Studio!")
             return
@@ -373,7 +378,7 @@ class DTEWrapper:
         self.set_autoload()
         item_op = self.dte.ItemOperations.OpenFile(
                 os.path.abspath(filename))
-        sel = dte.ActiveDocument.Selection
+        sel = self.dte.ActiveDocument.Selection
         sel.MoveToLineAndOffset(line, col)
         self.activate()
 
@@ -401,6 +406,10 @@ class DTEWrapper:
         projects = []
         for project in sorted(self.dte.Solution.Projects,
                 cmp = lambda x,y: cmp(x.Name, y.Name)):
+            # Count projects without a Properties object as special projects
+            # that shouldn't be listed.
+            if project.Properties is None:
+                continue
             if project.Name == startup_project_name:
                 startup_project_index = index
             projects.append(self.get_project_tree(project))
@@ -419,9 +428,15 @@ class DTEWrapper:
         # NOTE: This assumes that only VCFile item kinds are of interest
         #       as leaves, and that VCFile items are always leaves.
         if item.Properties is not None:
-            if item.Properties.Item("Kind").Value == "VCFile":
-                return [str(item.Name),
-                        str(item.Properties.Item("FullPath").Value)]
+            # NOTE: Solution folders don't have the "Kind" property.
+            #       Therefore, just ignore exceptions from these and process
+            #       their project items below.
+            try:
+                if item.Properties.Item("Kind").Value == "VCFile":
+                    return [str(item.Name),
+                            str(item.Properties.Item("FullPath").Value)]
+            except pywintypes.com_error, e:
+                pass
 
         # If we didn't find a leaf (VCFile), recurse deeper
         children = []
@@ -470,7 +485,7 @@ class DTEWrapper:
             # NOTE: This assumes that only VCFile item kinds are of interest
             #       as leaves.
             if i.Properties.Item("Kind").Value == "VCFile":
-                files.append(i.Properties.Item("FullPath").Value)
+                files.append(str(i.Properties.Item("FullPath").Value))
             if i.SubProject is not None:
                 files += self.get_project_items_files(i.SubProject.ProjectItems)
             files += self.get_project_items_files(i.ProjectItems)
@@ -521,7 +536,7 @@ class WScriptShell:
         self.__wsh = win32com.client.Dispatch("WScript.Shell")
 
     def __call__(self, *args, **kw):
-        return __wsh
+        return self.__wsh
 
 ############################################################ {{{1
 class VimExt:
