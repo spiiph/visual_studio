@@ -78,13 +78,39 @@ class DTEWrapper:
         # The pid of the current DTE object
         self.current_dte = 0
 
+        # State variable for the UseFullPaths property
+        self.use_full_paths = None
+
     def __get_dte(self):
         if self.current_dte == 0:
             self.set_current_dte()
         return self.dtes[self.current_dte]
-
     dte = property(__get_dte)
+
+    def __get_solution(self):
+        if self.dte is not None:
+            return self.dte.Solution
+    solution = property(__get_solution)
+
+    def __get_projects(self):
+        if self.dte is not None:
+            return self.dte.Solution.Projects
+    projects = property(__get_projects)
+
+    def __get_properties(self):
+        if self.dte is not None:
+            return self.dte.Solution.Properties
+    properties = property(__get_properties)
+
+    def __get_solution_build(self):
+        if self.dte is not None:
+            return self.dte.Solution.SolutionBuild
+    solution_build = property(__get_solution_build)
         
+    def __get_active_configuration(self):
+        if self.dte is not None:
+            return self.dte.Solution.SolutionBuild.ActiveConfiguration
+    active_configuration = property(__get_active_configuration)
 
     ############################################################ {{{2
     def set_current_dte(self, pid = 0):
@@ -156,9 +182,8 @@ class DTEWrapper:
         vsBuildStateInProgress = 2
         vsBuildStateDone = 3
 
-        build = self.dte.Solution.SolutionBuild
         try:
-            while build.BuildState == vsBuildStateInProgress:
+            while self.solution_build.BuildState == vsBuildStateInProgress:
                 time.sleep(0.1)
         except Exception, e:
             logging.exception(e)
@@ -196,6 +221,61 @@ class DTEWrapper:
             logging.exception(e)
         if len(enabled) != 0:
             VimExt.echo("Enabled %s in VisualStudio" % " and ".join(enabled))
+
+    ############################################################ {{{2
+    def set_use_full_paths(self, project_name = None):
+        '''Set the 'Use full Paths' property in the specified project
+        or all projects.'''
+
+        if self.use_full_paths is not None:
+            return
+
+        if self.dte is None:
+            return
+
+        self.use_full_paths = {}
+        projects = self.projects
+        if project_name is not None:
+            projects = [p for p in projects if p.Name == project_name]
+
+        for p in projects:
+            tool = p.Object.Configurations.Item(
+                    self.active_configuration.Name).Tools.Item(
+                            "VCCLCompilerTool")
+            if tool is not None:
+                self.use_full_paths[p.Name] = tool.UseFullPaths
+                tool.UseFullPaths = True
+            else:
+                logging.debug("== DTE.set_use_full_paths tool is " +
+                    "None for project: %s" % p.Name)
+
+    ############################################################ {{{2
+    def reset_use_full_paths(self, project_name = None):
+        '''Reset the 'Use full Paths' property in the specified project
+        or all projects.'''
+        logging.debug("== DTE.reset_use_full_paths use_full_paths: %s" %
+                self.use_full_paths)
+
+        if self.use_full_paths is None:
+            return
+
+        if self.dte is None:
+            return
+
+        projects = self.projects
+        if project_name is not None:
+            projects = [p for p in projects if p.Name == project_name]
+
+        for p in projects:
+            tool = p.Object.Configurations.Item(
+                    self.active_configuration.Name).Tools.Item(
+                            "VCCLCompiler")
+            if tool is not None:
+                tool.UseFullPaths = self.use_full_paths[p.Name]
+            else:
+                logging.debug("== DTE.set_use_full_paths tool is " +
+                    "None for project: %s" % p.Name)
+        self.use_full_paths = None
 
     ############################################################ {{{2
     def has_csharp_projects(self):
@@ -247,17 +327,15 @@ class DTEWrapper:
 
         try:
             self.dte.ExecuteCommand("Build.Compile")
+            # Wait for build to complete
+            self.wait_for_build()
+            self.get_output(output_file, "Output")
+            VimExt.activate()
         except Exception, e:
             logging.exception(e)
             VimExt.exception(e, sys.exc_traceback)
             VimExt.activate()
             return
-
-        # Wait for build to complete
-        self.wait_for_build()
-        self.get_output(output_file, "Output")
-        #VimExt.vim_status("Compile file complete")
-        VimExt.activate()
 
     ############################################################ {{{2
     def build_project(self, output_file, project_name = None):
@@ -274,28 +352,29 @@ class DTEWrapper:
         self.activate()
 
         try:
-            solution = self.dte.Solution
-            config = solution.SolutionBuild.ActiveConfiguration.Name
             if project_name is None:
-                project_name = solution.Properties("StartupProject").Value
-            project = [x for x in solution.Projects
+                project_name = self.properties.Item("StartupProject").Value
+            project = [x for x in self.projects
                     if x.Name == project_name][0]
+            config = project.Object.Configurations.Item(
+                    self.active_configuration.Name)
 
             logging.info(("== DTE.build_project config, name: %s, %s") %
                     (config, project.UniqueName))
 
-            solution.SolutionBuild.BuildProject(config, project.UniqueName, 1)
+            self.set_use_full_paths(project.Name)
+            config.Build()
+            # Wait for build to complete
+            self.wait_for_build()
+            self.get_output(output_file, "Output")
+            VimExt.activate()
         except Exception, e:
             logging.exception(e)
             VimExt.exception(e, sys.exc_traceback)
             VimExt.activate()
             return
-
-        # Wait for build to complete
-        self.wait_for_build()
-        self.get_output(output_file, "Output")
-        #VimExt.status("Build project complete")
-        VimExt.activate()
+        finally:
+            self.reset_use_full_paths(project.Name)
 
     ############################################################ {{{2
     def build_solution(self, output_file):
@@ -311,18 +390,19 @@ class DTEWrapper:
         self.activate()
 
         try:
-            self.dte.Solution.SolutionBuild.Build(1)
+            self.set_use_full_paths()
+            self.solution_build.Build(1)
+            # Wait for build to complete
+            self.wait_for_build()
+            self.get_output(output_file, "Output")
+            VimExt.activate()
         except Exception, e:
             logging.exception(e)
             VimExt.exception(e, sys.exc_traceback)
             VimExt.activate()
             return
-
-        # Wait for build to complete
-        self.wait_for_build()
-        self.get_output(output_file, "Output")
-        #VimExt.status("Build solution complete")
-        VimExt.activate()
+        finally:
+            self.reset_use_full_paths()
 
     ############################################################ {{{2
     def set_startup_project(self, project_name):
@@ -334,7 +414,7 @@ class DTEWrapper:
             return
 
         try:
-            self.dte.Solution.Properties("StartupProject").Value = \
+            self.properties.Item("StartupProject").Value = \
                 project_name
         except Exception, e:
             logging.exception(e)
@@ -399,11 +479,11 @@ class DTEWrapper:
             return
 
         startup_project_name = \
-            self.dte.Solution.Properties("StartupProject").Value
+            self.properties.Item("StartupProject").Value
         startup_project_index = -1
         index = 0
         projects = []
-        for project in sorted(self.dte.Solution.Projects,
+        for project in sorted(self.projects,
                 cmp = lambda x,y: cmp(x.Name, y.Name)):
             # Count projects without a Properties object as special projects
             # that shouldn't be listed.
@@ -464,10 +544,9 @@ class DTEWrapper:
 
         files = []
         try:
-            solution = self.dte.Solution
             if not project_name:
-                project_name = solution.Properties("StartupProject").Value
-            project = [x for x in solution.Projects
+                project_name = self.properties.Item("StartupProject").Value
+            project = [x for x in self.projects
                     if x.Name == project_name][0]
             files = self.get_project_items_files(project.ProjectItems)
         except Exception, e:
