@@ -50,7 +50,12 @@ scriptencoding utf-8
 " (Shamelessly stolen from NERD_tree.vim)
 function! s:InitVariable(var, value)
     if !exists(a:var)
-        exec 'let ' . a:var . ' = ' . "'" . a:value . "'"
+        if type(a:value) == type([]) || type(a:value) == type({})
+            exec 'let ' . a:var . ' = ' . string(a:value)
+        else
+            exec 'let ' . a:var . ' = ' . "'" . a:value . "'"
+        endif
+
         return 1
     endif
     return 0
@@ -58,7 +63,7 @@ endfunction
 
 "----------------------------------------------------------------------
 " Global variables {{{2
-call s:InitVariable("g:visual_studio_output", $TEMP . "\\vs_output.txt")
+call s:InitVariable("g:visual_studio_output", $TEMP . '\vs_output.txt')
 call s:InitVariable("g:visual_studio_use_location_list", 0)
 call s:InitVariable("g:visual_studio_quickfix_height", 20)
 call s:InitVariable("g:visual_studio_errorformat", {})
@@ -345,7 +350,7 @@ endfunction
 " Task list {{{2
 " Get the task list from Visual Studio 
 function! DTETaskList()
-    call s:DTEExec("get_task_list", g:visual_studio_output)
+    call s:DTEExec("get_task_list", escape(g:visual_studio_output, '\'))
     call s:DTELoadErrorFile("Task List")
     call s:DTEQuickfixOpen()
 endfunction
@@ -354,7 +359,7 @@ endfunction
 " Output {{{2
 " Get the output from a build or compilation from Visual Studio
 function! DTEOutput()
-    call s:DTEExec("get_output", g:visual_studio_output, "Output")
+    call s:DTEExec("get_output", escape(g:visual_studio_output, '\'), "Output")
     call s:DTELoadErrorFile("Output")
     call s:DTEQuickfixOpen()
 endfunction
@@ -364,10 +369,10 @@ endfunction
 " Get find results from Visual Studio
 function! DTEFindResults(which)
     if a:which == 1
-        call s:DTEExec("get_output", g:visual_studio_output,
+        call s:DTEExec("get_output", escape(g:visual_studio_output, '\'),
             \ "Find Results 1")
     else
-        call s:DTEExec("get_output", g:visual_studio_output,
+        call s:DTEExec("get_output", escape(g:visual_studio_output, '\'),
             \ "Find Results 2")
     endif
     s:DTELoadErrorFile("Find Results")
@@ -429,7 +434,7 @@ function! DTECompileFile()
     if !DTEPutFile()
         return
     endif
-    call s:DTEExec("compile_file", g:visual_studio_output)
+    call s:DTEExec("compile_file", escape(g:visual_studio_output, '\'))
     call s:DTELoadErrorFile("Output")
     call s:DTEQuickfixOpen()
 endfunction
@@ -443,9 +448,9 @@ function! DTEBuildProject(...)
     endif
 
     if a:0 >= 1
-        call s:DTEExec("build_project", g:visual_studio_output, a:1)
+        call s:DTEExec("build_project", escape(g:visual_studio_output, '\'), a:1)
     else
-        call s:DTEExec("build_project", g:visual_studio_output)
+        call s:DTEExec("build_project", escape(g:visual_studio_output, '\'))
     endif
     call s:DTELoadErrorFile("Output")
     call s:DTEQuickfixOpen()
@@ -459,7 +464,7 @@ function! DTEBuildSolution()
         wall
     endif
 
-    call s:DTEExec("build_solution", g:visual_studio_output)
+    call s:DTEExec("build_solution", escape(g:visual_studio_output, '\'))
     call s:DTELoadErrorFile("Output")
     call s:DTEQuickfixOpen()
 endfunction

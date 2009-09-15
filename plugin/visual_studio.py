@@ -43,7 +43,7 @@ except:
 ############################################################ {{{1
 # Exit function
 # Disable vim exit processing to avoid an exception at exit
-sys.exitfunc = lambda: None
+#sys.exitfunc = lambda: None
 
 ############################################################ {{{1
 # Logging
@@ -55,7 +55,7 @@ if logging_enabled:
     log_file = os.path.join(os.path.dirname(__file__), "visual_studio.log")
     logging.basicConfig(
         filename = log_file,
-        filemode = "rw",
+        filemode = "a",
         level = logging.DEBUG,
         format = "%(asctime)s %(levelname)-8s %(pathname)s(%(lineno)d)\n" +
             "%(message)s\n"
@@ -170,6 +170,8 @@ class DTEWrapper:
             return
 
         try:
+            logging.info("== DTE.activate caption: %s" %
+                    self.dte.MainWindow.Caption)
             self.dte.MainWindow.Activate()
             #wsh().AppActivate(self.dte.MainWindow.Caption)
         except pywintypes.com_error, e:
@@ -231,7 +233,7 @@ class DTEWrapper:
             sel = window.Selection
         sel.SelectAll()
         f = file(output_file, "w")
-        f.write(sel.Text)
+        f.write(sel.Text.replace('\r', ''))
         f.close()
         sel.Collapse()
 
@@ -273,17 +275,14 @@ class DTEWrapper:
 
         try:
             solution = self.dte.Solution
-            try:
-                config = solution.ActiveConfiguration.Name
-            except:
-                config = solution.Properties["ActiveConfig"]
+            config = solution.SolutionBuild.ActiveConfiguration.Name
             if project_name is None:
                 project_name = solution.Properties("StartupProject").Value
             project = [x for x in solution.Projects
                     if x.Name == project_name][0]
 
-            logging.info(("== DTE.build_project configuration_name, " +
-                "project_unique_name: %s, %s") % (config, project.UniqueName))
+            logging.info(("== DTE.build_project config, name: %s, %s") %
+                    (config, project.UniqueName))
 
             solution.SolutionBuild.BuildProject(config, project.UniqueName, 1)
         except Exception, e:
