@@ -1,0 +1,9 @@
+"Microsoft Development Environment 8.0"
+"Microsoft Development Environment VC++ Code Model 8.0 Type Library"
+"Microsoft Development Environment VC++ Project System Engine 8.0 Type Library"
+"Microsoft Development Environment VC++ Project System Shell 8.0 Type Library"
+
+"Microsoft Development Environment 7.1"
+"Microsoft Development Environment VC++ Code Model 7.1 Type library"
+"Microsoft Development Environment VC++ Project System Engine 7.0 Type Library"
+"Microsoft Development Environment VC++ Project System Shell 7.1 Type Library"

@@ -402,9 +402,9 @@ function! s:DTELoadErrorFile(type)
     endif
 
     if g:visual_studio_use_location_list
-        exe "lfile " . g:visual_studio_output
+        exe "lgetfile " . g:visual_studio_output
     else
-        exe "cfile  " . g:visual_studio_output
+        exe "cgetfile " . g:visual_studio_output
     endif
 
     " restore errorformat

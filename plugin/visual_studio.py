@@ -48,7 +48,7 @@ except:
 ############################################################ {{{1
 # Logging
 import logging
-logging_enabled = True
+logging_enabled = False
 
 if logging_enabled:
     import tempfile
@@ -209,9 +209,9 @@ class DTEWrapper:
         if self.dte is None:
             return
 
+        enabled = []
         try:
             properties = self.dte.Properties("Environment", "Documents")
-            enabled = []
             for item in ["DetectFileChangesOutsideIDE",
                     "AutoloadExternalChanges"]:
                 if not properties.Item(item).Value:
