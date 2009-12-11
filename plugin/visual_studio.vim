@@ -26,11 +26,13 @@
 
 "----------------------------------------------------------------------
 " TODO list {{{1
-" * Consider removing support for python exe. Practically all Vim executables
+" - Consider removing support for python exe. Practically all Vim executables
 "   for Windows are built with +python anyway
 " * Some :echo messages are not displayed during function execution;
 "   investigate, and fix if possible.
 " - Rename s:visual_studio_xyz to s:xyz - no need for a prefix here.
+" * Break out commands, mappings and menu to its own file(s)
+" * Change to an autoload-structure for functions
 
 " Load guards {{{1
 if exists('loaded_visual_studio')
@@ -40,6 +42,12 @@ let loaded_visual_studio = 1
 
 if version < 700
     echo "visual_studio.vim plugin requires Vim 7 or above"
+    finish
+endif
+
+if !has("python")
+    echo "visual_studio.vim plugin requires a Vim compiled with Python support, " . 
+        \ "and that the correct version of Python is installed"
     finish
 endif
 
@@ -106,70 +114,27 @@ call s:InitVariable("s:solution_index", -1)
 call s:InitVariable("s:project_index", -1)
 
 "----------------------------------------------------------------------
-" Initialization functions {{{1
+" Initialization {{{1
 
 "----------------------------------------------------------------------
-" Initialize the python module {{{2
-" If Vim was compiled with +python, import visual_studio.py, otherwise setup
-" the path to the visual_studio.py module.
+" Initialization function {{{2
+" Import visual_studio.py
 function! s:PythonInit()
     if s:python_init
-        return 1
+        return
     endif
-    if has("python")
-        python import sys
-        exe 'python sys.path.append(r"' . s:location . '")'
-        exe 'python import ' . s:module
-    else
-        call s:PythonDllCheck()
-        if !s:PythonExeCheck()
-            return 0
-        endif
-        let s:module = '"' . s:location .
-            \ '\' . s:module . '.py"'
-    endif
+
+    python import sys
+    exe 'python sys.path.append(r"' . s:location . '")'
+    exe 'python import ' . s:module
+
     let s:python_init = 1
-    return 1
 endfunction
 
 "----------------------------------------------------------------------
-" Check availability of python dll {{{2
-" If Vim wasn't compiled with +python, inform the user that this will
-" decrease performance. Otherwise, if the dll couldn't be found, inform the
-" user about this
-function! s:PythonDllCheck()
-    redir => output
-    silent version
-    redir end
-    let dll_name = matchstr(output, '-DDYNAMIC_PYTHON_DLL="\zs[^"]*\ze"')
-    if dll_name == ""
-        echo "Vim does not appear to be built with a python DLL." .
-            \ "Using a version of vim built with embedded python will " .
-            \ "result in better performance of the visual_studio.vim plugin."
-    else
-        echo "Vim has been been built with python DLL '" . dll_name .
-            \ "' but it could not be loaded. If this version of python " .
-            \ "is available to vim the result will be better performance " .
-            \ "of the visual_studio.vim plugin."
-    endif
-    call input("Press <Enter> to continue ...")
-endfunction
+" Plugin initialization {{{2
+s:PythonInit()
 
-"----------------------------------------------------------------------
-" Check availability of python executable {{{2
-" If we can't use the python dll, check that the python executable is
-" callable.
-function! s:PythonExeCheck()
-    let output = system(g:visual_studio_python_exe . ' -c "print 123"')
-    if output !~? '^123'
-        echo "Error cannot run: " . g:visual_studio_python_exe
-        echo "Update the system PATH or else set " . 
-            \ "g:visual_studio_python_exe to a valid python.exe"
-        return 0
-    else
-        return 1
-    endif
-endfunction
 
 "----------------------------------------------------------------------
 " Python module access functions {{{1
@@ -181,11 +146,6 @@ endfunction
 " Otherwise, use the system() function to run the python executable, and
 " run :execute on the output.
 function! s:DTEExec(py_func, ...)
-    " Initialize the python module
-    if !s:PythonInit()
-        return
-    endif
-
     " All functions except update_solution_list and set_current_dte require a
     " solution to be selected. If no solution is selected, select the default
     " one
@@ -200,42 +160,10 @@ function! s:DTEExec(py_func, ...)
     for arg in a:000
         call add(arglist, '"' . arg . '"')
     endfor
+    let pyargs = join(arglist, ",")
 
     " Call the python function
-    if has("python")
-        let pyargs = join(arglist, ",")
-        exe printf("python %s.dte_execute(%s)",
-            \ s:module, pyargs)
-    else
-        let vim_pid = s:GetPid()
-        if vim_pid > 0
-            call add(arglist, " vim_pid=" . vim_pid)
-        endif
-        let pyargs = join(arglist, " ")
-        " Here the output of the python script is executed as a vim command
-        let cmd = printf("%s %s %s", g:visual_studio_python_exe, 
-            \ s:module, pyargs)
-        let result = system(cmd)
-        exe result
-    endif
-endfunction
-
-"----------------------------------------------------------------------
-" Get the PID of Vim {{{2
-" Call the _getpid function in Microsoft's runtime libraries to get the PID
-" of the current VIM instance.
-function! s:GetPid()
-    try
-        let pid = libcallnr("msvcrt.dll", "_getpid", "")
-        return pid
-    catch
-    endtry
-    try
-        let pid = libcallnr("crtdll.dll", "_getpid", "")
-        return pid
-    catch
-    endtry
-    return 0
+    exe printf("python %s.dte_execute(%s)", s:module, pyargs)
 endfunction
 
 
@@ -246,15 +174,10 @@ endfunction
 " Reload python module {{{2
 " Force a reload of visual_studio.py. Useful when changing visual_studio.py.
 function! DTEReload()
-    if !s:PythonInit()
-        return
-    endif
-    if has("python")
-        exe "python reload(" . s:module . ")"
-        exe "python import " . s:module
-        call s:DTEExec("set_current_dte", s:GetSolutionPID())
-        echo s:module . ".py is reloaded."
-    endif
+    exe "python reload(" . s:module . ")"
+    exe "python import " . s:module
+    call s:DTEExec("set_current_dte", s:GetSolutionPID())
+    echo s:module . ".py is reloaded."
 endfunction
 
 "----------------------------------------------------------------------
