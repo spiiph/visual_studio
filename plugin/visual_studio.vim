@@ -33,10 +33,10 @@
 " - Rename s:visual_studio_xyz to s:xyz - no need for a prefix here.
 
 " Load guards {{{1
-if exists('loaded_plugin_visual_studio')
+if exists('loaded_visual_studio')
     finish
 endif
-let loaded_plugin_visual_studio = 1
+let loaded_visual_studio = 1
 
 if version < 700
     echo "visual_studio.vim plugin requires Vim 7 or above"
