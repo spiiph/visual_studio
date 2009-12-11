@@ -24,9 +24,14 @@
 " Version 1.0 Dec-03
 " Base functionality
 
+"----------------------------------------------------------------------
+" TODO list {{{1
+" * Consider removing support for python exe. Practically all Vim executables
+"   for Windows are built with +python anyway
+
 " Load guards {{{1
 if exists('loaded_plugin_visual_studio')
-    "finish
+    finish
 endif
 let loaded_plugin_visual_studio = 1
 
@@ -173,15 +178,27 @@ endfunction
 " Otherwise, use the system() function to run the python executable, and
 " run :execute on the output.
 function! s:DTEExec(py_func, ...)
+    " Initialize the python module
     if !s:PythonInit()
         return
     endif
 
+    " All functions except update_solution_list and set_current_dte require a
+    " solution to be selected. If no solution is selected, select the default
+    " one
+    if index(["update_solution_list", "set_current_dte"], a:py_func) == -1
+        if !s:SolutionIsSelected()
+            return
+        endif
+    endif
+
+    "Create the argument string
     let arglist = ['"' . a:py_func . '"']
     for arg in a:000
         call add(arglist, '"' . arg . '"')
     endfor
 
+    " Call the python function
     if has("python")
         let pyargs = join(arglist, ",")
         exe printf("python %s.dte_execute(%s)",
@@ -498,12 +515,12 @@ function! DTESelectSolution(...)
     echo "Searching for Visual Studio instances ..."
     call s:DTEGetInstances()
     if len(s:visual_studio_solutions) == 0
-        echo "No VisualStudio instances found"
+        echo "No Visual Studio instances found"
         return
     endif
 
     " Optional args passed in are
-    "  a:1 -- solution name
+    "  a:1 -- solution name or DEFAULT
     if a:0 > 0
         let index = index(map(copy(s:visual_studio_solutions), "v:val[1]"),
             \ a:1)
@@ -527,6 +544,29 @@ function! DTESelectSolution(...)
         else
             echo "Connected: " . s:GetSolutionName()
         endif
+    endif
+endfunc
+
+"----------------------------------------------------------------------
+" Select default solution {{{2
+" Select the default solution (index 0) if none is selected.
+function! s:SolutionIsSelected()
+
+    if s:visual_studio_solution_index != -1
+        return 1
+    endif
+
+    call s:DTEGetInstances()
+    if len(s:visual_studio_solutions) == 0
+        echo "No Visual Studio instances found"
+        return 0
+    endif
+
+    if !s:SelectSolutionByIndex(0)
+        echo "Failed to select the default solution."
+        return 0
+    else
+        return 1
     endif
 endfunc
 
