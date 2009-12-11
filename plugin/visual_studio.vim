@@ -28,6 +28,9 @@
 " TODO list {{{1
 " * Consider removing support for python exe. Practically all Vim executables
 "   for Windows are built with +python anyway
+" * Some :echo messages are not displayed during function execution;
+"   investigate, and fix if possible.
+" - Rename s:visual_studio_xyz to s:xyz - no need for a prefix here.
 
 " Load guards {{{1
 if exists('loaded_plugin_visual_studio')
@@ -94,13 +97,13 @@ call s:InitVariable("g:visual_studio_mappings", 1)
 
 "----------------------------------------------------------------------
 " Local variables {{{2
-call s:InitVariable("s:visual_studio_module", expand("<sfile>:t:r"))
-call s:InitVariable("s:visual_studio_python_init", 0)
-call s:InitVariable("s:visual_studio_location", expand("<sfile>:h"))
-call s:InitVariable("s:visual_studio_solutions", [])
-call s:InitVariable("s:visual_studio_projects", [])
-call s:InitVariable("s:visual_studio_solution_index", -1)
-call s:InitVariable("s:visual_studio_project_index", -1)
+call s:InitVariable("s:module", expand("<sfile>:t:r"))
+call s:InitVariable("s:python_init", 0)
+call s:InitVariable("s:location", expand("<sfile>:h"))
+call s:InitVariable("s:solutions", [])
+call s:InitVariable("s:projects", [])
+call s:InitVariable("s:solution_index", -1)
+call s:InitVariable("s:project_index", -1)
 
 "----------------------------------------------------------------------
 " Initialization functions {{{1
@@ -110,22 +113,22 @@ call s:InitVariable("s:visual_studio_project_index", -1)
 " If Vim was compiled with +python, import visual_studio.py, otherwise setup
 " the path to the visual_studio.py module.
 function! s:PythonInit()
-    if s:visual_studio_python_init
+    if s:python_init
         return 1
     endif
     if has("python")
         python import sys
-        exe 'python sys.path.append(r"' . s:visual_studio_location . '")'
-        exe 'python import ' . s:visual_studio_module
+        exe 'python sys.path.append(r"' . s:location . '")'
+        exe 'python import ' . s:module
     else
         call s:PythonDllCheck()
         if !s:PythonExeCheck()
             return 0
         endif
-        let s:visual_studio_module = '"' . s:visual_studio_location .
-            \ '\' . s:visual_studio_module . '.py"'
+        let s:module = '"' . s:location .
+            \ '\' . s:module . '.py"'
     endif
-    let s:visual_studio_python_init = 1
+    let s:python_init = 1
     return 1
 endfunction
 
@@ -202,7 +205,7 @@ function! s:DTEExec(py_func, ...)
     if has("python")
         let pyargs = join(arglist, ",")
         exe printf("python %s.dte_execute(%s)",
-            \ s:visual_studio_module, pyargs)
+            \ s:module, pyargs)
     else
         let vim_pid = s:GetPid()
         if vim_pid > 0
@@ -211,7 +214,7 @@ function! s:DTEExec(py_func, ...)
         let pyargs = join(arglist, " ")
         " Here the output of the python script is executed as a vim command
         let cmd = printf("%s %s %s", g:visual_studio_python_exe, 
-            \ s:visual_studio_module, pyargs)
+            \ s:module, pyargs)
         let result = system(cmd)
         exe result
     endif
@@ -247,10 +250,10 @@ function! DTEReload()
         return
     endif
     if has("python")
-        exe "python reload(" . s:visual_studio_module . ")"
-        exe "python import " . s:visual_studio_module
+        exe "python reload(" . s:module . ")"
+        exe "python import " . s:module
         call s:DTEExec("set_current_dte", s:GetSolutionPID())
-        echo s:visual_studio_module . ".py is reloaded."
+        echo s:module . ".py is reloaded."
     endif
 endfunction
 
@@ -298,7 +301,7 @@ function! DTEListFiles(...)
         call s:DTEGetProjectFiles()
     end
 
-    for f in s:visual_studio_project_files
+    for f in s:project_files
         echo f
     endfor
     call input("Press <Enter> to continue ...")
@@ -318,11 +321,11 @@ function! DTEGetFiles(...)
         call s:DTEGetProjectFiles()
     end
 
-    if len(s:visual_studio_project_files) == 0
+    if len(s:project_files) == 0
         echo "No files found in projects"
     else
-        echo "Found " . len(s:visual_studio_project_files) . " file(s)"
-        exe "silent args " . join(s:visual_studio_project_files, ' ')
+        echo "Found " . len(s:project_files) . " file(s)"
+        exe "silent args " . join(s:project_files, ' ')
     end
 endfunction
 
@@ -335,8 +338,8 @@ function! s:DTEGetProjectFiles(...)
     if a:0 >= 1 | let project_name = a:1 | endif
 
     " The following call will assign values to
-    " s:visual_studio_project_files
-    let s:visual_studio_project_files = []
+    " s:project_files
+    let s:project_files = []
     if exists("project_name")
         call s:DTEExec("update_project_files_list", project_name)
     else
@@ -345,12 +348,12 @@ function! s:DTEGetProjectFiles(...)
 
     " Filter files with extensions that should be ignored
     let extensions = split(g:visual_studio_ignore_file_types, ",")
-    let s:visual_studio_project_files = s:FilterExtensions(
-        \ s:visual_studio_project_files,  
+    let s:project_files = s:FilterExtensions(
+        \ s:project_files,  
         \ extensions)
 
-    let s:visual_studio_project_files = 
-        \ map(s:visual_studio_project_files, 'fnamemodify(v:val, ":.")')
+    let s:project_files = 
+        \ map(s:project_files, 'fnamemodify(v:val, ":.")')
 endfunction
 
 function! s:FilterExtensions(files, extensions)
@@ -493,14 +496,14 @@ endfunction
 " List solutions {{{2
 " List all Visual Studio solutions
 function! DTEListSolutions()
-    " Populate s:visual_studio_solutions
+    " Populate s:solutions
     echo "Searching for Visual Studio instances ..."
     call s:DTEGetInstances()
-    if len(s:visual_studio_solutions) == 0
+    if len(s:solutions) == 0
         echo "No Visual Studio instances found"
     else
-        for i in range(len(s:visual_studio_solutions))
-            let selected = (s:visual_studio_solution_index == i)
+        for i in range(len(s:solutions))
+            let selected = (s:solution_index == i)
             echo s:CreateMenuEntry(selected, " ", i + 1, s:GetSolutionName(i))
         endfor
     endif
@@ -511,10 +514,10 @@ endfunc
 " Select a solution by name, or list all available solutions and select by
 " solution number.
 function! DTESelectSolution(...)
-    " Populate s:visual_studio_solutions
+    " Populate s:solutions
     echo "Searching for Visual Studio instances ..."
     call s:DTEGetInstances()
-    if len(s:visual_studio_solutions) == 0
+    if len(s:solutions) == 0
         echo "No Visual Studio instances found"
         return
     endif
@@ -522,15 +525,15 @@ function! DTESelectSolution(...)
     " Optional args passed in are
     "  a:1 -- solution name or DEFAULT
     if a:0 > 0
-        let index = index(map(copy(s:visual_studio_solutions), "v:val[1]"),
+        let index = index(map(copy(s:solutions), "v:val[1]"),
             \ a:1)
         if index == -1
             echo "Invalid solution name: " . a:1
         endif
     else
         let menu = ["Select solution"]
-        for i in range(len(s:visual_studio_solutions))
-            let selected = (s:visual_studio_solution_index == i)
+        for i in range(len(s:solutions))
+            let selected = (s:solution_index == i)
             let entry = s:CreateMenuEntry(selected, " ", i + 1,
                 \ s:GetSolutionName(i))
             call add(menu, entry)
@@ -552,12 +555,12 @@ endfunc
 " Select the default solution (index 0) if none is selected.
 function! s:SolutionIsSelected()
 
-    if s:visual_studio_solution_index != -1
+    if s:solution_index != -1
         return 1
     endif
 
     call s:DTEGetInstances()
-    if len(s:visual_studio_solutions) == 0
+    if len(s:solutions) == 0
         echo "No Visual Studio instances found"
         return 0
     endif
@@ -574,13 +577,13 @@ endfunc
 " Refresh the solution menu {{{2
 " Refresh the VisualStudio.Solutions menu, and display the popup menu.
 function! s:MenuRefreshSolutions()
-    " Populate s:visual_studio_solutions
+    " Populate s:solutions
     echo "Searching for Visual Studio instances ..."
     call s:DTEGetInstances()
-    if len(s:visual_studio_solutions) == 0
+    if len(s:solutions) == 0
         echo "No Visual Studio instances found"
     else
-        echo "Found " . len(s:visual_studio_solutions) . " solutions"
+        echo "Found " . len(s:solutions) . " solutions"
         call s:UpdateSolutionMenu()
         popup! VisualStudio.Solutions
     endif
@@ -603,8 +606,8 @@ endfunc
 " Find all Visual Studio instances (i.e. all solutions) and add them to the
 " solution list.
 function! s:DTEGetInstances()
-    let s:visual_studio_solutions = []
-    " The following call will populate s:visual_studio_solutions
+    let s:solutions = []
+    " The following call will populate s:solutions
     call s:DTEExec("update_solution_list")
     call s:UpdateSolutionMenu()
 endfunction
@@ -614,11 +617,11 @@ endfunction
 " Select a solution by supplying its index. Update the solution and project
 " menus.
 function! s:SelectSolutionByIndex(index)
-    if a:index < 0 || a:index >= len(s:visual_studio_solutions)
+    if a:index < 0 || a:index >= len(s:solutions)
         return 0
     endif
-    "if a:index != s:visual_studio_solution_index
-        let s:visual_studio_solution_index = a:index
+    "if a:index != s:solution_index
+        let s:solution_index = a:index
         call s:DTEExec("set_current_dte", s:GetSolutionPID())
         call s:UpdateSolutionMenu()
     "endif
@@ -638,15 +641,15 @@ function! s:UpdateSolutionMenu()
         aunmenu VisualStudio.Solutions
     catch
     endtry
-    for i in range(len(s:visual_studio_solutions))
-        let selected = (s:visual_studio_solution_index == i)
+    for i in range(len(s:solutions))
+        let selected = (s:solution_index == i)
         let item = s:CreateMenuEntry(selected, " &", i + 1,
             \ s:GetSolutionName(i))
         exe "amenu <silent> .810 &VisualStudio.&Solutions." . 
             \ escape(item, '\ .') .
             \ " :call <SID>MenuSelectSolution(" . i . ")<CR>"
     endfor
-    if len(s:visual_studio_solutions) > 0
+    if len(s:solutions) > 0
         amenu <silent> &VisualStudio.&Solutions.-separator- :
     endif
     amenu <silent> &VisualStudio.&Solutions.&Refresh
@@ -661,9 +664,9 @@ function! s:GetSolutionPID(...)
     if a:0 > 0 
         let index = a:1
     else
-        let index = s:visual_studio_solution_index
+        let index = s:solution_index
     endif
-    let item = get(s:visual_studio_solutions, index, [0, ""])
+    let item = get(s:solutions, index, [0, ""])
     return item[0]
 endfunction
 
@@ -675,9 +678,9 @@ function! s:GetSolutionName(...)
     if a:0 > 0 
         let index = a:1
     else
-        let index = s:visual_studio_solution_index
+        let index = s:solution_index
     endif
-    let item = get(s:visual_studio_solutions, index, [0, ""])
+    let item = get(s:solutions, index, [0, ""])
     return item[1]
 endfunction
 
@@ -685,7 +688,7 @@ endfunction
 " Solution completion {{{2
 " Command line completion on solution name; return a list of solution names.
 function! s:CompleteSolution(ArgLead, CmdLine, CursorPos)
-    let result = map(copy(s:visual_studio_solutions), "v:val[1]")
+    let result = map(copy(s:solutions), "v:val[1]")
     return result
 endfunction
 
@@ -696,14 +699,14 @@ endfunction
 " List projects {{{2
 " List all projects in the current solution
 function! DTEListProjects()
-    " Populate s:visual_studio_projects
+    " Populate s:projects
     "echo "Searching for Visual Studio projects ..."
     "call s:DTEGetProjects()
-    if len(s:visual_studio_projects) == 0
+    if len(s:projects) == 0
         echo "No projects found in solution" 
     else
-        for i in range(len(s:visual_studio_projects))
-            let selected = (s:visual_studio_project_index == i)
+        for i in range(len(s:projects))
+            let selected = (s:project_index == i)
             echo s:CreateMenuEntry(selected, " ", i + 1,
                 \ s:GetProjectName(i))
         endfor
@@ -715,7 +718,7 @@ endfunc
 " Select a project by name, or list all projects in the current solution and
 " select by project number.
 function! DTESelectProject(...)
-    if len(s:visual_studio_projects) == 0
+    if len(s:projects) == 0
         echo "No projects found in solution" 
         return
     endif
@@ -723,15 +726,15 @@ function! DTESelectProject(...)
     " Optional args passed in are
     "  a:1 -- project name
     if a:0 > 0 
-        let index = index(map(copy(s:visual_studio_projects), "v:val[0]"),
+        let index = index(map(copy(s:projects), "v:val[0]"),
             \ a:1)
         if index == -1
             echo "Invalid project name: " . a:1
         endif
     else
         let menu = ["Select project"]
-        for i in range(len(s:visual_studio_projects))
-            let selected = (s:visual_studio_project_index == i)
+        for i in range(len(s:projects))
+            let selected = (s:project_index == i)
             let entry = s:CreateMenuEntry(selected, " ", i + 1,
                 \ s:GetProjectName(i))
             call add(menu, entry)
@@ -753,10 +756,10 @@ endfunc
 " Refresh the VisualStudio.Projects menu for the current solution,
 " and display the popup menu.
 function! s:MenuRefreshProjects()
-    if len(s:visual_studio_projects) == 0
+    if len(s:projects) == 0
         echo "No projects found in solution"
     else
-        echo "Found " . len(s:visual_studio_projects) . " projects"
+        echo "Found " . len(s:projects) . " projects"
         call s:UpdateProjectMenu()
         popup! VisualStudio.Projects
     endif
@@ -778,8 +781,8 @@ endfunc
 " Get Visual Studio projects {{{2
 " Get the projects in the current solution and add them to the project list.
 function! s:DTEGetProjects()
-    let s:visual_studio_projects = []
-    " The following call will populate s:visual_studio_projects
+    let s:projects = []
+    " The following call will populate s:projects
     call s:DTEExec("update_project_list")
     call s:UpdateProjectMenu()
 endfunction
@@ -789,12 +792,12 @@ endfunction
 " Select a Visual Studio startup project by supplying its index. Update the
 " project menu.
 function! s:SelectProjectByIndex(index)
-    if a:index < 0 || a:index >= len(s:visual_studio_projects)
+    if a:index < 0 || a:index >= len(s:projects)
         return 0
     endif
-    if a:index != s:visual_studio_project_index
+    if a:index != s:project_index
         call s:DTEExec("set_startup_project", s:GetProjectName(a:index))
-        let s:visual_studio_project_index = a:index
+        let s:project_index = a:index
         call s:UpdateProjectMenu()
     endif
     return 1
@@ -814,8 +817,8 @@ function! s:UpdateProjectMenu()
     catch
     endtry
 
-    for i in range(len(s:visual_studio_projects))
-        let selected = (s:visual_studio_project_index == i)
+    for i in range(len(s:projects))
+        let selected = (s:project_index == i)
         let item = "&VisualStudio.Pro&jects." .
             \ escape(s:CreateMenuEntry(selected, " &", i + 1,
             \ s:GetProjectName(i)), " .")
@@ -840,7 +843,7 @@ function! s:UpdateProjectMenu()
         endif
     endfor
 
-    if len(s:visual_studio_projects) > 0
+    if len(s:projects) > 0
         amenu <silent> .810 &VisualStudio.Pro&jects.-separator- :
     endif
     amenu <silent> .810 &VisualStudio.Pro&jects.&Refresh
@@ -869,9 +872,9 @@ function! s:GetProjectName(...)
     if a:0 > 0 
         let index = a:1
     else
-        let index = s:visual_studio_project_index
+        let index = s:project_index
     endif
-    let item = get(s:visual_studio_projects, index, ["", []])
+    let item = get(s:projects, index, ["", []])
     return item[0]
 endfunction
 
@@ -879,7 +882,7 @@ endfunction
 " Project completion {{{2
 " Command line completion on project name; return a list of project names.
 function! s:CompleteProject(ArgLead, CmdLine, CursorPos)
-    let result = map(copy(s:visual_studio_projects), "v:val[0]")
+    let result = map(copy(s:projects), "v:val[0]")
     return result
 endfunction
 
@@ -891,9 +894,9 @@ function! s:GetProjectChildren(...)
     if a:0 > 0 
         let index = a:1
     else
-        let index = s:visual_studio_project_index
+        let index = s:project_index
     endif
-    let item = get(s:visual_studio_projects, index, ["", []])
+    let item = get(s:projects, index, ["", []])
     return item[1]
 endfunction
 
