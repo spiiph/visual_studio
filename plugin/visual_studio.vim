@@ -133,7 +133,7 @@ endfunction
 
 "----------------------------------------------------------------------
 " Plugin initialization {{{2
-s:PythonInit()
+call s:PythonInit()
 
 
 "----------------------------------------------------------------------
@@ -623,8 +623,6 @@ endfunction
 " List all projects in the current solution
 function! DTEListProjects()
     " Populate s:projects
-    "echo "Searching for Visual Studio projects ..."
-    "call s:DTEGetProjects()
     if len(s:projects) == 0
         echo "No projects found in solution" 
     else

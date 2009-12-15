@@ -468,7 +468,7 @@ class DTEWrapper:
         self.update_dtes()
         instances = [[key, str(self.dtes[key].Solution.FullName)]
                 for key in self.dtes.keys()]
-        VimExt.command("let s:visual_studio_solutions = %s" % instances)
+        VimExt.command("let s:solutions = %s" % instances)
 
     ############################################################ {{{2
     def update_project_list(self):
@@ -493,8 +493,8 @@ class DTEWrapper:
                 startup_project_index = index
             projects.append(self.get_project_tree(project))
             index += 1
-        VimExt.command("let s:visual_studio_projects = %s" % projects)
-        VimExt.command("let s:visual_studio_project_index = %s" %
+        VimExt.command("let s:projects = %s" % projects)
+        VimExt.command("let s:project_index = %s" %
                 startup_project_index)
 
     ############################################################ {{{3
@@ -552,7 +552,7 @@ class DTEWrapper:
         except Exception, e:
             logging.exception(e)
             VimExt.exception(e, sys.exc_traceback)
-        VimExt.command("let s:visual_studio_project_files = %s" % files)
+        VimExt.command("let s:project_files = %s" % files)
 
     ############################################################ {{{3
     def get_project_items_files(self, items):
