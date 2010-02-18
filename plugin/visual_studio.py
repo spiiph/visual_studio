@@ -31,13 +31,8 @@ import win32com.client
 
 ############################################################ {{{1
 # Vim module
-# If Vim was compiled with +python support, import the vim module here.
-# Check for 'vim is not None' where we neet do distinguish between using
-# vim.command() and print for interaction with Vim.
-try:
-    import vim
-except:
-    pass
+# NOTE: Vim must be compiled with +python support.
+import vim
 
 
 ############################################################ {{{1
@@ -105,6 +100,7 @@ class DTEWrapper:
             return self.dte.Solution.SolutionBuild.ActiveConfiguration
     active_configuration = property(__get_active_configuration)
 
+
     ############################################################ {{{2
     # Generic helper functions
     def get_project(self, name = None):
@@ -124,6 +120,32 @@ class DTEWrapper:
             return project
         except StopIteration:
             raise
+
+    def get_tools(self, project):
+        log_func()
+
+        if self.dte is None:
+            return None
+        else:
+            return project.Object.Configurations.Item(
+                    self.dte.Solution.SolutionBuild.ActiveConfiguration.Name
+                    ).Tools
+
+    def get_compiler_tool(self, project):
+        log_func()
+
+        if self.dte is None:
+            return None
+
+        tools = self.get_tools(project)
+        if tools is None:
+            return None
+        else:
+            return tools.Item("VCCLCompilerTool")
+
+
+
+
 
     ############################################################ {{{2
     def set_current_dte(self, pid = 0):
@@ -237,8 +259,10 @@ class DTEWrapper:
         enabled = []
         try:
             properties = self.dte.Properties("Environment", "Documents")
-            for item in ["DetectFileChangesOutsideIDE",
-                    "AutoloadExternalChanges"]:
+            for item in [
+                    "DetectFileChangesOutsideIDE",
+                    "AutoloadExternalChanges"
+                    ]:
                 if properties.Item(item).Value == 0:
                     properties.Item(item).Value = 1
                     enabled.append(item)
@@ -258,19 +282,18 @@ class DTEWrapper:
             return
 
         # If project_name is not given, modify all projects
-        projects = self.projects
         if project_name is not None:
-            projects = [p for p in projects if p.Name == project_name]
+            projects = [p for p in self.projects if p.Name == project_name]
+        else:
+            projects = self.projects
 
         for p in projects:
-            tool = p.Object.Configurations.Item(
-                    self.active_configuration.Name).Tools.Item(
-                            "VCCLCompilerTool")
+            compiler = self.get_compiler_tool(p)
 
-            if tool is not None:
-                tool.UseFullPaths = True
+            if compiler is not None:
+                compiler.UseFullPaths = True
             else:
-                logging.debug("%s: tool is None for project %s" %
+                logging.debug("%s: compiler is None for project %s" %
                         (func_name(), p.Name))
 
     ############################################################ {{{2
@@ -676,7 +699,7 @@ class VimExt:
         if msg is None:
             msg = "Encountered unknown exception"
         VimExt.echomsg("Error: %s" % msg)
-        VimExt.echomsg("Check %s for details")
+        VimExt.echomsg("Check %s for details" % log_file)
         #while trace:
         #    VimExt.echoerr("    File '%s', line %d, in %s" %
         #            (trace.tb_frame.f_code.co_filename, trace.tb_lineno,
