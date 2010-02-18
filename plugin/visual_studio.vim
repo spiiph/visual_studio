@@ -35,10 +35,10 @@
 " * Change to an autoload-structure for functions
 
 " Load guards {{{1
-if exists('loaded_visual_studio')
+if exists('loaded_visual_studio') && !exists('visual_studio_debug')
     finish
 endif
-"let loaded_visual_studio = 1
+let loaded_visual_studio = 1
 
 " Only run on win32 and win64, not cygwin
 if !has("win32") && !has("win64")
@@ -652,8 +652,7 @@ function! DTESelectProject(...)
     " Optional args passed in are
     "  a:1 -- project name
     if a:0 > 0 
-        let index = index(map(copy(s:projects), "v:val[0]"),
-            \ a:1)
+        let index = index(s:projects, a:1)
         if index == -1
             echo "Invalid project name: " . a:1
         endif
@@ -801,14 +800,14 @@ function! s:GetProjectName(...)
         let index = s:project_index
     endif
     let item = get(s:projects, index, ["", []])
-    return item[0]
+    return item
 endfunction
 
 "----------------------------------------------------------------------
 " Project completion {{{2
 " Command line completion on project name; return a list of project names.
 function! s:CompleteProject(ArgLead, CmdLine, CursorPos)
-    let result = map(copy(s:projects), "v:val[0]")
+    let result = filter(copy(s:projects), "v:val =~ a:ArgLead")
     return result
 endfunction
 
