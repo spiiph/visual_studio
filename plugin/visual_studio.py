@@ -105,13 +105,13 @@ class DTEWrapper:
     # Generic helper functions
     def get_project(self, name = None):
         def compare_name(project):
-            return project.Name == project_name
+            return project.Name == name
 
         if name is None:
-            project_name = self.properties.Item("StartupProject").Value
+            name = self.properties.Item("StartupProject").Value
 
         logging.debug("%s: project name is %s" %
-                (func_name(), project_name))
+                (func_name(), name))
         logging.debug("%s: available project names %s" %
                 (func_name(), [p.Name for p in self.projects]))
         try:
@@ -700,11 +700,6 @@ class VimExt:
             msg = "Encountered unknown exception"
         VimExt.echomsg("Error: %s" % msg)
         VimExt.echomsg("Check %s for details" % log_file)
-        #while trace:
-        #    VimExt.echoerr("    File '%s', line %d, in %s" %
-        #            (trace.tb_frame.f_code.co_filename, trace.tb_lineno,
-        #                trace.tb_frame.f_code.co_name))
-        #    trace = trace.tb_next
 
     @classmethod
     ############################################################ {{{2
