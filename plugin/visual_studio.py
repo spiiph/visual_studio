@@ -53,8 +53,8 @@ if logging_enabled:
         format = "%(asctime)s %(levelname)8s: %(message)s",
         datefmt = "%Y-%m-%d %H:%M:%S"
         )
-    logging.getLogger('').setLevel(logging.DEBUG)
-    #logging.getLogger('').setLevel(logging.INFO)
+    #logging.getLogger('').setLevel(logging.DEBUG)
+    logging.getLogger('').setLevel(logging.INFO)
 else:
     logging.disable(logging.CRITICAL)
 
@@ -254,13 +254,8 @@ class DTEWrapper:
 
         log_func()
 
-        #if self.use_full_paths is not None:
-        #    return
-
         if self.dte is None:
             return
-
-        #self.use_full_paths = {}
 
         # If project_name is not given, modify all projects
         projects = self.projects
@@ -273,43 +268,10 @@ class DTEWrapper:
                             "VCCLCompilerTool")
 
             if tool is not None:
-                #self.use_full_paths[p.Name] = tool.UseFullPaths
                 tool.UseFullPaths = True
             else:
                 logging.debug("%s: tool is None for project %s" %
                         (func_name(), p.Name))
-
-    ############################################################ {{{2
-    def reset_use_full_paths(self, project_name = None):
-        '''Reset the 'Use full Paths' property in the specified project
-        or all projects.'''
-
-        log_func()
-
-        #if self.use_full_paths is None:
-        #    return
-
-        if self.dte is None:
-            return
-
-        # If project_name is not given, modify all projects
-        projects = self.projects
-        if project_name is not None:
-            projects = [p for p in projects if p.Name == project_name]
-
-        for p in projects:
-            tool = p.Object.Configurations.Item(
-                    self.active_configuration.Name).Tools.Item(
-                            "VCCLCompilerTool")
-
-            if tool is not None:
-                tool.UseFullPaths = False
-                #tool.UseFullPaths = self.use_full_paths[p.Name]
-            else:
-                logging.debug("%s: tool is None for project %s" %
-                        (func_name(), p.Name))
-
-        #self.use_full_paths = None
 
     ############################################################ {{{2
     def has_csharp_projects(self):
@@ -407,9 +369,6 @@ class DTEWrapper:
             logging.exception(e)
             VimExt.exception(e, sys.exc_traceback)
             VimExt.activate()
-            return
-        finally:
-            self.reset_use_full_paths(project.Name)
 
     ############################################################ {{{2
     def build_solution(self, output_file):
@@ -436,9 +395,6 @@ class DTEWrapper:
             logging.exception(e)
             VimExt.exception(e, sys.exc_traceback)
             VimExt.activate()
-            return
-        finally:
-            self.reset_use_full_paths()
 
     ############################################################ {{{2
     def set_startup_project(self, project_name):
