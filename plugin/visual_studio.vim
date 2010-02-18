@@ -113,6 +113,7 @@ call s:InitVariable("s:python_init", 0)
 call s:InitVariable("s:location", expand("<sfile>:h"))
 call s:InitVariable("s:solutions", [])
 call s:InitVariable("s:projects", [])
+call s:InitVariable("s:project_tree", [])
 call s:InitVariable("s:solution_index", -1)
 call s:InitVariable("s:project_index", -1)
 call s:InitVariable("s:output", $TEMP . '\vs_output.txt')
@@ -728,7 +729,6 @@ function! s:SelectProjectByIndex(index)
     return 1
 endfunction
 
-"----------------------------------------------------------------------
 " Update project menu {{{2
 " Update the project menu after having selected a different project or
 " after having updated the project list.
@@ -758,13 +758,15 @@ function! s:UpdateProjectMenu()
             \ ":call DTEGetFiles(<SID>GetProjectName(" . i . "))<CR>"
 
         if g:visual_studio_project_submenus
+            echo "Fetching files and filters for project " . s:GetProjectName(i)
             exe "amenu <silent> .810 " . item . ".-separator- :"
 
-            if type(s:GetProjectChildren(i)) == type([])
-                for child in s:GetProjectChildren(i)
+            let children = s:GetProjectChildren(i)
+            for child in children
+                if len(children) == 2
                     call s:UpdateProjectSubMenu(item, child[0], child[1])
-                endfor
-            endif
+                endif
+            endfor
         endif
     endfor
 
@@ -799,7 +801,7 @@ function! s:GetProjectName(...)
     else
         let index = s:project_index
     endif
-    let item = get(s:projects, index, ["", []])
+    let item = get(s:projects, index, "")
     return item
 endfunction
 
@@ -821,8 +823,8 @@ function! s:GetProjectChildren(...)
     else
         let index = s:project_index
     endif
-    let item = get(s:projects, index, ["", []])
-    return item[1]
+    call s:DTEExec("update_project_tree", s:GetProjectName(index))
+    return get(s:project_tree, 1, [])
 endfunction
 
 "----------------------------------------------------------------------
