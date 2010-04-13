@@ -127,9 +127,12 @@ class DTEWrapper:
         if self.dte is None:
             return None
         else:
-            return project.Object.Configurations.Item(
-                    self.dte.Solution.SolutionBuild.ActiveConfiguration.Name
-                    ).Tools
+            try:
+                return project.Object.Configurations.Item(
+                        self.dte.Solution.SolutionBuild.ActiveConfiguration.Name
+                        ).Tools
+            except AttributeError:
+                return None
 
     def get_compiler_tool(self, project):
         log_func()
@@ -142,9 +145,6 @@ class DTEWrapper:
             return None
         else:
             return tools.Item("VCCLCompilerTool")
-
-
-
 
 
     ############################################################ {{{2
@@ -402,7 +402,7 @@ class DTEWrapper:
         if self.dte is None:
             return
 
-        if has_csharp_projects():
+        if self.has_csharp_projects():
             self.dte.Documents.CloseAll()
         self.set_autoload()
         self.activate()
