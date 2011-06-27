@@ -1,44 +1,46 @@
 " visual_studio.vim - Visual Studio integration with Vim 
 " Author:               Henrik Öhman <speeph@gmail.com>
-" URL:                  http://github.com/spiiph/visual_studio/tree/master
-" Version:              2.0
-" LastChanged:          $LastChangeDate$
-" Revision:             $Revision$
+" URL:                  http://github.com/spiiph/visual_studio
+" Version:              2.0-beta
 " Original Author:      Michael Graz <mgraz.vim@plan10.com>
 " Original Copyright:   Copyright (c) 2003-2007 Michael Graz
+" Original URL:         http://www.vim.org/scripts/script.php?script_id=864
 
-" Pre-fork history {{{1
-" Visual Studio .NET integration with Vim 
+" Original work {{{1
+" This plugin is a derivative based on the original work by
+" Michael Graz <mgraz.vim@plan10.com>. 
 "
-" Copyright (c) 2003-2007 Michael Graz
-" mgraz.vim@plan10.com
+" The original plugin, version information, and history can be found at
+" http://www.vim.org/scripts/script.php?script_id=864. 
 "
-" Version 1.2 Sep-07
-" Support for multiple instances and startup projects
-" Thanks for the work of Henrik Öhman <spiiph@hotmail.com>
-"
-" Version 1.1 May-04
-" Support for compiling & building
-" Thanks to Leif Wickland for contributing to this feature
-"
-" Version 1.0 Dec-03
-" Base functionality
+" The main reasons for creating this derivative work are:
+" * Use of a public repo (github) to facilitate contributions from others
+" * Refactorization of the Vim and Python scripts
+" * Improved extensibility making it easier to add more functionality from
+"   Visual Studio
 
 "----------------------------------------------------------------------
 " TODO list {{{1
-" - Consider removing support for python exe. Practically all Vim executables
-"   for Windows are built with +python anyway
 " * Some :echo messages are not displayed during function execution;
 "   investigate, and fix if possible.
-" - Rename s:visual_studio_xyz to s:xyz - no need for a prefix here.
 " * Break out commands, mappings and menu to its own file(s)
 " * Change to an autoload-structure for functions
+" * Consider switching to a dict format for settings
+" * Create a changes.txt describing changes made from the original version
+" * Create vimhelp documentation
+" * Add VS bookmarks functionality
+" * Add VS breakpoint functionality
+" * Add completion through VS intellisense (if possible)
+" - Add a g:visual_studio_log_level variable to control logging and verbosity
+" * Create a function to enable and disable logging on the fly
+" * (Ambitious) Investigate if NERD_tree can be exploited to implement
+"   Solution Explorer, Class View, and other VS tree views
 
 " Load guards {{{1
-if exists('loaded_visual_studio') && !exists('visual_studio_debug')
+if exists('visual_studio_loaded') && !exists('visual_studio_debug')
     finish
 endif
-let loaded_visual_studio = 1
+let visual_studio_loaded = 1
 
 " Only run on win32 and win64, not cygwin
 if !has("win32") && !has("win64")
@@ -61,13 +63,10 @@ scriptencoding utf-8
 "----------------------------------------------------------------------
 " Variables {{{1
 
-" If setting special versions of the following vs_ files,
-" make sure to escape backslashes.
-
 "----------------------------------------------------------------------
 " InitVariable() function {{{2
 " This function is used to initialise a given variable to a given value. The
-" variable is only initialised if it does not exist prior
+" variable is only initialised if it does not exist.
 " (Shamelessly stolen from NERD_tree.vim)
 function! s:InitVariable(var, value)
     if !exists(a:var)
@@ -105,6 +104,7 @@ call s:InitVariable("g:visual_studio_menu", 1)
 call s:InitVariable("g:visual_studio_project_submenus", 1)
 call s:InitVariable("g:visual_studio_commands", 1)
 call s:InitVariable("g:visual_studio_mappings", 1)
+call s:InitVariable("g:visual_studio_log_level", 0)
 
 "----------------------------------------------------------------------
 " Local variables {{{2
@@ -147,9 +147,7 @@ call s:PythonInit()
 "----------------------------------------------------------------------
 " Execute a python function {{{2
 " Execute a function in the visual_studio.py module with the supplied
-" arguments. If Vim was compiled with +python, use the :python command.
-" Otherwise, use the system() function to run the python executable, and
-" run :execute on the output.
+" arguments.
 function! s:DTEExec(py_func, ...)
     " All functions except update_solution_list and set_current_dte require a
     " solution to be selected. If no solution is selected, select the default
@@ -177,13 +175,26 @@ endfunction
 
 "----------------------------------------------------------------------
 " Reload python module {{{2
-" Force a reload of visual_studio.py. Useful when changing visual_studio.py.
+" Force a reload of visual_studio.py. Useful when making modifications to
+" visual_studio.py.
 function! DTEReload()
     exe "python import " . s:module
     exe "python reload(" . s:module . ")"
     call s:DTEExec("set_current_dte", s:GetSolutionPID())
     echo s:module . ".py is reloaded."
 endfunction
+
+"----------------------------------------------------------------------
+" Display log file name {{{2
+" Echo the log file used by visual_studio.py.
+function! DTELogFile()
+    if !empty(s:log_file)
+        exe "e " . s:log_file
+    else
+        echo "Logging is not enabled."
+    end
+endfunction
+
 
 "----------------------------------------------------------------------
 " Single file operations {{{1
@@ -628,7 +639,12 @@ endfunction
 " List projects {{{2
 " List all projects in the current solution
 function! DTEListProjects()
-    " Populate s:projects
+    " Check that a solution is selected
+    if !s:SolutionIsSelected()
+        return
+    end
+
+    " Check that the solution contains some projects
     if len(s:projects) == 0
         echo "No projects found in solution" 
     else
@@ -645,6 +661,12 @@ endfunc
 " Select a project by name, or list all projects in the current solution and
 " select by project number.
 function! DTESelectProject(...)
+    " Check that a solution is selected
+    if !s:SolutionIsSelected()
+        return
+    end
+
+    " Check that the solution contains some projects
     if len(s:projects) == 0
         echo "No projects found in solution" 
         return
@@ -855,14 +877,23 @@ endfunction
 
 "----------------------------------------------------------------------
 " Help and about {{{1
+
+"----------------------------------------------------------------------
+" Online documentation {{{2
+" Documentation to the original version of visual_studio.vim.
 function! DTEOnline()
     call system("cmd /c start http://www.plan10.com/vim/visual-studio/doc/1.2")
 endfunction
 
+"----------------------------------------------------------------------
+" About {{{2
+" About visual_studio.vim.
 function! DTEAbout()
     echo "visual_studio.vim version 1.2+"
+    echo "Based on the work by Michael Graz <mgraz.vim@plan10.com>"
+    echo "http://www.plan10.com/vim/visual-studio/"
     echo "Customizations by Henrik Öhman <speeph@gmail.com>"
-    echo "git clone git://github.com/spiiph/visual_studio/tree/master"
+    echo "http://github.com/spiiph/visual_studio"
     call input("Press <Enter> to continue ...")
 endfunction
 
@@ -959,7 +990,9 @@ if g:visual_studio_commands
     com! DTEListProjects call DTEListProjects()
     com! DTEAbout call DTEAbout()
     com! DTEOnline call DTEOnline()
+    com! DTEHelp call DTEOnline()
     com! DTEReload call DTEReload()
+    com! DTELogFile call DTELogFile()
 endif
 
 " vim: set sts=4 sw=4 fdm=marker:
