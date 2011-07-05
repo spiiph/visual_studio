@@ -14,7 +14,8 @@ Original Copyright: Copyright (c) 2003-2007 Michael Graz
 # See 'visual_studio.vim' for a description of the original work and the
 # rationale behind creating this derivative work.
 
-# TODO list {{{1
+############################################################ {{{1
+# TODO list
 #  * Exchange VimExt.command with VimExt.set_var for variables.
 
 ############################################################ {{{1
@@ -28,10 +29,14 @@ import pywintypes
 import pythoncom
 import win32com.client
 
+
 ############################################################ {{{1
 # Vim module
 # NOTE: Vim must be compiled with +python support.
-import vim
+try:
+    import vim
+except ImportError:
+    pass
 
 ############################################################ {{{1
 # Logging initialization
@@ -357,8 +362,8 @@ class DTEWrapper:
         if self.dte is None:
             return
 
-        if self.has_csharp_projects():
-            self.dte.Documents.CloseAll()
+        #if self.has_csharp_projects():
+            #self.dte.Documents.CloseAll()
         self.set_autoload()
         self.activate()
 
@@ -390,8 +395,8 @@ class DTEWrapper:
         if self.dte is None:
             return
 
-        if self.has_csharp_projects():
-            self.dte.Documents.CloseAll()
+        #if self.has_csharp_projects():
+            #self.dte.Documents.CloseAll()
         self.set_autoload()
         self.activate()
 
@@ -665,15 +670,20 @@ class VimExt:
     @classmethod
     ############################################################ {{{2
     def command(cls, command):
-        '''Send an Ex command to Vim using vim.command().'''
+        '''Send an Ex command to Vim using vim.command(). vim.command() is
+        wrapped for standalone usage.'''
         command = command.replace("\\\\", "\\")
         log_func()
-        vim.command(command)
+        if 'vim' in dir():
+            vim.command(command)
+        else:
+            print "Vim command: %s" % command
 
     @classmethod
     ############################################################ {{{2
     def eval(cls, expr):
-        '''Evaluate an expression in Vim using vim.eval().'''
+        '''Evaluate an expression in Vim using vim.eval(). vim.eval() is
+        wrapped for standalone usage.'''
         log_func()
         return vim.eval(expr)
 
@@ -689,8 +699,11 @@ class VimExt:
     def get_var(cls, var):
         '''Get the value of a Vim variable as a string, list, or dict.'''
         log_func()
-        return VimExt.eval(var)
-
+        if 'vim' in dir():
+            return VimExt.eval(var)
+        else:
+            print "Vim eval: %s" % var
+            return 0
 
     @classmethod
     ############################################################ {{{2
