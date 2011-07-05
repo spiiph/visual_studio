@@ -99,7 +99,7 @@ call s:InitVariable("g:visual_studio_errorformat['find_results']",
 call s:InitVariable("g:visual_studio_errorformat_task_list",
     \ "%f(%l)\ %#:\ %#%m")
 call s:InitVariable("g:visual_studio_write_before_build", 1)
-call s:InitVariable("g:visual_studio_ignore_file_types",  "obj,lib,res")
+call s:InitVariable("g:visual_studio_ignore_file_types",  "obj,lib,res,ico,filters")
 call s:InitVariable("g:visual_studio_menu", 1)
 call s:InitVariable("g:visual_studio_project_submenus", 1)
 call s:InitVariable("g:visual_studio_commands", 1)
