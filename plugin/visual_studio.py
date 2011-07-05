@@ -33,6 +33,9 @@ import win32com.client
 ############################################################ {{{1
 # Vim module
 # NOTE: Vim must be compiled with +python support.
+# NOTE: If used as a standalone module, imported directly in Python, the vim
+#       module is not available. The VimExt wrappers then prints vim commands
+#       and expressions to stdout rather than evaluating them.
 try:
     import vim
 except ImportError:
