@@ -292,7 +292,7 @@ function! s:DTEGetProjectFiles(...)
         \ extensions)
 
     let s:project_files = 
-        \ map(s:project_files, 'fnamemodify(v:val, ":.")')
+        \ map(s:project_files, 'fnamemodify(fnameescape(v:val), ":.")')
 endfunction
 
 function! s:FilterExtensions(files, extensions)
