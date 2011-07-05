@@ -74,26 +74,36 @@ class DTEWrapper:
     def __get_solution(self):
         if self.dte is not None:
             return self.dte.Solution
+        else:
+            return None
     solution = property(__get_solution)
 
     def __get_projects(self):
         if self.dte is not None:
             return self.dte.Solution.Projects
+        else:
+            return None
     projects = property(__get_projects)
 
     def __get_properties(self):
         if self.dte is not None:
             return self.dte.Solution.Properties
+        else:
+            return None
     properties = property(__get_properties)
 
     def __get_solution_build(self):
         if self.dte is not None:
             return self.dte.Solution.SolutionBuild
+        else:
+            return None
     solution_build = property(__get_solution_build)
 
     def __get_active_configuration(self):
         if self.dte is not None:
             return self.dte.Solution.SolutionBuild.ActiveConfiguration
+        else:
+            return None
     active_configuration = property(__get_active_configuration)
 
 
