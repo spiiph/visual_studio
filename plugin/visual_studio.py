@@ -674,7 +674,7 @@ class VimExt:
         wrapped for standalone usage.'''
         command = command.replace("\\\\", "\\")
         log_func()
-        if 'vim' in dir():
+        if 'vim' in globals():
             vim.command(command)
         else:
             print "Vim command: %s" % command
@@ -699,7 +699,7 @@ class VimExt:
     def get_var(cls, var):
         '''Get the value of a Vim variable as a string, list, or dict.'''
         log_func()
-        if 'vim' in dir():
+        if 'vim' in globals():
             return VimExt.eval(var)
         else:
             print "Vim eval: %s" % var
