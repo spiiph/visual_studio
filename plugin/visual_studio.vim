@@ -48,13 +48,13 @@ if !has("win32") && !has("win64")
 endif
 
 if version < 700
-    echomsg "visual_studio.vim plugin requires Vim 7 or above"
+    echomsg "visual_studio.vim plugin requires Vim 7 or above."
     finish
 endif
 
 if !has("python")
-    echomsg "visual_studio.vim plugin requires a Vim compiled with Python support, " . 
-        \ "and that the correct version of Python is installed"
+    echomsg "visual_studio.vim plugin requires a Vim compiled with Python" .
+        \ "support, and that the correct version of Python is installed."
     finish
 endif
 
@@ -89,17 +89,20 @@ call s:InitVariable("g:visual_studio_errorformat", {})
 " NOTE: we could include linker errors if we want, but it's fairly useless
 "       \'%*\\d>c1xx\ :\ fatal\ error\ %t%n:\ %m:\ ''%f''%.%#' " c1xx errors
 call s:InitVariable("g:visual_studio_errorformat['cpp']",
+    \ '%*\\d>%f(%l):\ %m,' .
     \ '%*\\d>%f(%l)\ :\ %m,' .
     \ '%f(%l)\ :\ %m,' .
     \ '\ %#%f(%l)\ :\ %m')
 call s:InitVariable("g:visual_studio_errorformat['csharp']",
+    \ '\ %f(%l\\\,%c):\ %m,' .
     \ '\ %#%f(%l\\\,%c):\ %m')
 call s:InitVariable("g:visual_studio_errorformat['find_results']",
     \ "\ %#%f(%l):%m")
 call s:InitVariable("g:visual_studio_errorformat_task_list",
     \ "%f(%l)\ %#:\ %#%m")
 call s:InitVariable("g:visual_studio_write_before_build", 1)
-call s:InitVariable("g:visual_studio_ignore_file_types",  "obj,lib,res,ico,filters")
+call s:InitVariable("g:visual_studio_ignore_file_types",
+    \ "obj,lib,res,ico,filters,settings")
 call s:InitVariable("g:visual_studio_menu", 1)
 call s:InitVariable("g:visual_studio_project_submenus", 1)
 call s:InitVariable("g:visual_studio_commands", 1)
@@ -117,6 +120,7 @@ call s:InitVariable("s:project_tree", [])
 call s:InitVariable("s:solution_index", -1)
 call s:InitVariable("s:project_index", -1)
 call s:InitVariable("s:output", $TEMP . '\vs_output.txt')
+call s:InitVariable("s:command_status", 0)
 
 "----------------------------------------------------------------------
 " Initialization {{{1
@@ -178,6 +182,7 @@ endfunction
 " Force a reload of visual_studio.py. Useful when making modifications to
 " visual_studio.py.
 function! DTEReload()
+    exe "python " . s:module . ".dte_cleanup()"
     exe "python import " . s:module
     exe "python reload(" . s:module . ")"
     call s:DTEExec("set_current_dte", s:GetSolutionPID())
@@ -261,7 +266,7 @@ function! DTEGetFiles(...)
     end
 
     if len(s:project_files) == 0
-        echomsg "No files found in projects"
+        echomsg "No files found in projects."
     else
         echo "Found " . len(s:project_files) . " file(s)"
         exe "silent args " . join(s:project_files, ' ')
@@ -310,8 +315,10 @@ endfunction
 " Get the task list from Visual Studio 
 function! DTETaskList()
     call s:DTEExec("get_task_list", escape(s:output, '\'))
-    call s:DTELoadErrorFile("Task List")
-    call s:DTEQuickfixOpen()
+    if s:command_status
+        call s:DTELoadErrorFile("Task List")
+        call s:DTEQuickfixOpen()
+    endif
 endfunction
 
 "----------------------------------------------------------------------
@@ -319,8 +326,10 @@ endfunction
 " Get the output from a build or compilation from Visual Studio
 function! DTEOutput()
     call s:DTEExec("get_output", escape(s:output, '\'), "Output")
-    call s:DTELoadErrorFile("Output")
-    call s:DTEQuickfixOpen()
+    if s:command_status
+        call s:DTELoadErrorFile("Output")
+        call s:DTEQuickfixOpen()
+    endif
 endfunction
 
 "----------------------------------------------------------------------
@@ -334,8 +343,11 @@ function! DTEFindResults(which)
         call s:DTEExec("get_output", escape(s:output, '\'),
             \ "Find Results 2")
     endif
-    s:DTELoadErrorFile("Find Results")
-    call s:DTEQuickfixOpen()
+
+    if s:command_status
+        call s:DTELoadErrorFile("Find Results")
+        call s:DTEQuickfixOpen()
+    endif
 endfunction
 
 "----------------------------------------------------------------------
@@ -393,10 +405,12 @@ function! DTECompileFile()
     if !DTEPutFile()
         return
     endif
+
     call s:DTEExec("compile_file", escape(s:output, '\'))
-    call s:DTELoadErrorFile("Output")
-    call s:DTEQuickfixOpen()
-    echo "Done compiling."
+    if s:command_status
+        call s:DTELoadErrorFile("Output")
+        call s:DTEQuickfixOpen()
+    endif
 endfunction
 
 "----------------------------------------------------------------------
@@ -412,9 +426,11 @@ function! DTEBuildProject(...)
     else
         call s:DTEExec("build_project", escape(s:output, '\'))
     endif
-    call s:DTELoadErrorFile("Output")
-    call s:DTEQuickfixOpen()
-    echo "Done building project."
+
+    if s:command_status
+        call s:DTELoadErrorFile("Output")
+        call s:DTEQuickfixOpen()
+    endif
 endfunction
 
 "----------------------------------------------------------------------
@@ -426,9 +442,10 @@ function! DTEBuildSolution()
     endif
 
     call s:DTEExec("build_solution", escape(s:output, '\'))
-    call s:DTELoadErrorFile("Output")
-    call s:DTEQuickfixOpen()
-    echo "Done building solution."
+    if s:command_status
+        call s:DTELoadErrorFile("Output")
+        call s:DTEQuickfixOpen()
+    endif
 endfunction
 
 "----------------------------------------------------------------------
@@ -441,7 +458,7 @@ function! DTEListSolutions()
     " Populate s:solutions
     call s:DTEGetInstances()
     if len(s:solutions) == 0
-        echomsg "No Visual Studio instances found"
+        echomsg "No Visual Studio instances found."
     else
         for i in range(len(s:solutions))
             let selected = (s:solution_index == i)
@@ -458,7 +475,7 @@ function! DTESelectSolution(...)
     " Populate s:solutions
     call s:DTEGetInstances()
     if len(s:solutions) == 0
-        echomsg "No Visual Studio instances found"
+        echomsg "No Visual Studio instances found."
         return
     endif
 
