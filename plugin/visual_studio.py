@@ -174,14 +174,7 @@ class DTEWrapper:
 
     # Check if a project item is a file
     def is_file(self, item):
-        item_types = ["None", "ClCompile", "ClInclude", "ResourceCompile",
-                "Compile", "Content"]
-
-        is_file = (self.get_property(item, "ItemType", "")
-                in item_types)
-
-        return is_file
-
+        return item.Kind == u'{6BB5F8EE-4483-11D3-8BCF-00C04F8EC28C}'
 
     ############################################################ {{{2
     def set_current_dte(self, pid = 0):
@@ -277,7 +270,6 @@ class DTEWrapper:
             self.dte.MainWindow.Activate()
             logger.debug("%s: main window caption is %s" %
                     (func_name(), self.dte.MainWindow.Caption))
-            #wsh().AppActivate(self.dte.MainWindow.Caption)
         except (TypeError, pywintypes.com_error), e:
             logger.error("Failed to activate Visual Studio main window.")
 
@@ -643,14 +635,15 @@ class DTEWrapper:
         files = []
         for item in items:
             # Add the item itself
-            path = self.get_property(item, "FullPath")
-            if self.is_file(item) and path is not None:
-                files.append(str(path))
+            if self.is_file(item):
+                path = self.get_property(item, "FullPath")
+                if path is not None:
+                    files.append(str(path))
 
             # Add files from subprojects
-            if item.SubProject is not None:
-                sub_project_items = item.SubProject.ProjectItems
-                files += self.get_project_items_files(sub_project_items)
+            #if item.SubProject is not None:
+                #sub_project_items = item.SubProject.ProjectItems
+                #files += self.get_project_items_files(sub_project_items)
 
             # Add files from subitems
             files += self.get_project_items_files(item.ProjectItems)
